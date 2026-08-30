@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="kb_background">#FFE8EAED</color>
+    <color name="kb_key">#FFFFFFFF</color>
+    <color name="kb_key_pressed">#FFC9D2DC</color>
+    <color name="kb_key_special">#FFCBD2DA</color>
+    <color name="kb_key_action">#FF1E6FD9</color>
+    <color name="kb_key_text">#FF1B1B1F</color>
+    <color name="kb_key_text_special">#FF2A2F36</color>
+    <color name="kb_key_text_action">#FFFFFFFF</color>
+    <color name="kb_key_shadow">#22000000</color>
+    <color name="kb_strip_background">#FFE8EAED</color>
+    <color name="kb_strip_text">#FF1B1B1F</color>
+    <color name="kb_strip_text_muted">#FF6B7280</color>
+    <color name="kb_strip_llm">#FF1E6FD9</color>
+    <color name="kb_strip_divider">#33000000</color>
+</resources>

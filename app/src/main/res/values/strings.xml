@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Board</string>
+    <string name="subtype_en">English (US)</string>
+
+    <string name="settings_intro">Board is a keyboard that runs a small language model on the phone to fix typos. Nothing you type leaves the device.</string>
+    <string name="step_enable_title">1. Enable Board</string>
+    <string name="step_enable_body">Turn on Board in the system list of keyboards.</string>
+    <string name="step_enable_button">Open keyboard settings</string>
+    <string name="step_enable_done">Enabled</string>
+    <string name="step_select_title">2. Switch to Board</string>
+    <string name="step_select_body">Pick Board as the current keyboard.</string>
+    <string name="step_select_button">Choose keyboard</string>
+    <string name="step_select_done">Board is the current keyboard</string>
+    <string name="step_model_title">3. Download the model</string>
+    <string name="step_model_body">The keyboard works without a model (dictionary suggestions only). Download one to get language model corrections.</string>
+    <string name="model_download">Download</string>
+    <string name="model_cancel">Cancel</string>
+    <string name="model_delete">Delete</string>
+    <string name="model_import">Import a .gguf file</string>
+    <string name="model_status_none">No model installed</string>
+    <string name="model_status_installed">Installed: %1$s</string>
+    <string name="model_status_downloading">Downloading… %1$d%%</string>
+    <string name="model_status_error">Download failed: %1$s</string>
+
+    <string name="options_title">Options</string>
+    <string name="opt_autocorrect">Auto-correct the word you just typed</string>
+    <string name="opt_live_suggestions">Ask the model for suggestions while typing</string>
+    <string name="opt_adaptive_keys">Adaptive keys (shrink letters that cannot continue the word)</string>
+    <string name="opt_haptics">Vibrate on key press</string>
+
+    <string name="test_title">Try it</string>
+    <string name="test_hint">Type here. Try “I will meet you at the resturant tommorow”.</string>
+
+    <string name="strip_undo">Undo</string>
+    <string name="strip_fix">Fix</string>
+    <string name="strip_thinking">…</string>
+</resources>

@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- three rows of keys -->
+    <group>
+        <path android:fillColor="#FFFFFF" android:pathData="M30,38h8v8h-8z M42,38h8v8h-8z M54,38h8v8h-8z M66,38h8v8h-8z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M34,50h8v8h-8z M46,50h8v8h-8z M58,50h8v8h-8z M70,50h8v8h-8z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M38,62h32v8h-32z" />
+    </group>
+</vector>
