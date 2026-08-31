@@ -13,8 +13,11 @@ Site: https://thingg-co.github.io/type/
   answer is close enough to what you typed (edit distance and dictionary checks), the word is
   replaced. An undo chip appears in the suggestion bar; backspace straight after a correction
   restores the original too.
-- While you type an unknown word, the bar shows dictionary candidates immediately and a model
-  suggestion after a short pause.
+- While you type, the bar is context-aware: a small lexer reads the previous token and a
+  packed bigram table (260k pairs from Norvig's web corpus) ranks completions, orders the
+  word keys, and suggests the next word right after a space. If what you typed cannot start
+  any dictionary word, dictionary candidates appear immediately and the model is asked after
+  a short pause.
 - The ✨ button sends the current sentence to the model for a whole-sentence pass.
 - Adaptive keys: letters that cannot continue any dictionary word shrink and fade as you type.
   Hit areas do not change, so unusual words stay typable.

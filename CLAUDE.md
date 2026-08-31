@@ -24,7 +24,9 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   which is what makes corrections fast. Single-word output is GBNF-constrained.
 - `llm/` - `SpellLlm` (modes, prefix split via chat template, output validation), `Prompts`.
 - `dict/` - 56k-word frequency list + trie (assets/en_words.txt): known-word gate, bounded
-  Damerau-Levenshtein suggestions, adaptive-key weights.
+  Damerau-Levenshtein suggestions, adaptive-key weights. `Lexer` finds the previous token,
+  `Bigrams` (assets/en_bigrams.bin, built by tools/build_bigrams.py) scores word pairs for
+  context ranking and next-word chips; `TypingPolicy` combines them.
 - `ime/` - `TypeInputMethodService` (word tracking, boundary autocorrect with undo, sentence
   fix), `KeyboardView` (Canvas-drawn, adaptive keys), `SuggestionStripView`, `KeyboardLayouts`.
 - `model/` - catalog (chosen from eval results in tools/eval.py; don't swap models without

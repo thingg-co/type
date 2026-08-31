@@ -15,7 +15,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.aosmith.type.Prefs
 import com.aosmith.type.R
+import com.aosmith.type.dict.Bigrams
 import com.aosmith.type.dict.Dictionary
+import com.aosmith.type.dict.Lexer
 import com.aosmith.type.dict.MidWordAction
 import com.aosmith.type.dict.TypingPolicy
 import com.aosmith.type.llm.SpellLlm
@@ -36,6 +38,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private lateinit var llm: SpellLlm
 
     @Volatile private var dictionary: Dictionary? = null
+    @Volatile private var bigrams: Bigrams? = null
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -68,6 +71,11 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         prefs.registerListener(prefListener)
         mainScope.launch {
             dictionary = withContext(Dispatchers.IO) { Dictionary.load(this@TypeInputMethodService) }
+            bigrams = withContext(Dispatchers.IO) {
+                runCatching { Bigrams.load(this@TypeInputMethodService) }
+                    .onFailure { Log.e(TAG, "bigram load failed", it) }
+                    .getOrNull()
+            }
         }
         maybeLoadModel()
     }
@@ -224,14 +232,16 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         val dict = dictionary
         val current = word.toString()
         keyboardView?.keyWeights = if (current.isEmpty() || dict == null) null else dict.nextLetters(current)
-        if (!suggestionsAllowed || current.isEmpty() || dict == null) {
+        if (current.isEmpty()) suppressedTakeoverPrefix = null
+        if (!suggestionsAllowed || dict == null) {
             keyboardView?.wordTakeover = null
-            if (current.isEmpty()) suppressedTakeoverPrefix = null
             if (pendingUndo == null || !undoArmed) strip?.clear()
             return
         }
         liveJob = mainScope.launch {
-            val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, current) }
+            val beforeText = textBeforeWord(current) ?: ""
+            val prev = Lexer.previousWord(beforeText)
+            val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, prev, current) }
             if (word.toString() != current) return@launch
             if (action !is MidWordAction.WordKeys) keyboardView?.wordTakeover = null
             when (action) {
@@ -250,14 +260,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 }
                 is MidWordAction.Predictions ->
                     strip?.showSuggestions(action.words.map { SuggestionStripView.Suggestion(it) })
+                is MidWordAction.NextWords ->
+                    if (pendingUndo == null) strip?.showSuggestions(action.words.map { SuggestionStripView.Suggestion(it) })
                 is MidWordAction.Typo -> {
                     val typed = SuggestionStripView.Suggestion(current, isTypedWord = true)
                     val dictSuggestions = action.dictSuggestions.map { SuggestionStripView.Suggestion(it) }
                     strip?.showSuggestions(listOf(typed) + dictSuggestions)
                     if (action.askModel && prefs.liveSuggestions && llm.isReady && current.lowercase() !in sessionAccepted) {
                         delay(LIVE_DEBOUNCE_MS)
-                        val before = textBeforeWord(current) ?: ""
-                        val corrected = llm.correctWord(before, current)
+                        val corrected = llm.correctWord(beforeText, current)
                         if (corrected != null && word.toString() == current) {
                             val rest = dictSuggestions.filter { !it.text.equals(corrected, ignoreCase = true) }.take(1)
                             strip?.showSuggestions(listOf(SuggestionStripView.Suggestion(corrected, fromModel = true), typed) + rest)

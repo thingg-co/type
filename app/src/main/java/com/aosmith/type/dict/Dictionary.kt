@@ -26,6 +26,7 @@ class Dictionary(words: Sequence<String>) {
     private val rank = HashMap<String, Int>(80_000)
     private val root = Node()
     private val byLength = HashMap<Int, ArrayList<String>>()
+    private val byId = ArrayList<String>(60_000)
 
     init {
         var i = 0
@@ -33,6 +34,7 @@ class Dictionary(words: Sequence<String>) {
             val w = line.trim()
             if (w.isEmpty() || rank.containsKey(w)) continue
             rank[w] = i
+            byId += w
             byLength.getOrPut(w.length) { ArrayList() } += w
             // Zipf-like weight: rank 0 counts ~1.0, rank 50k counts ~0.02.
             val weight = 1f / (1f + i / 1000f)
@@ -59,6 +61,11 @@ class Dictionary(words: Sequence<String>) {
     }
 
     fun rankOf(word: String): Int = rank[word.lowercase()] ?: Int.MAX_VALUE
+
+    /** Stable id of [word] (its line number in the word list), or -1. Pairs with [Bigrams]. */
+    fun idOf(word: String): Int = rank[word.lowercase()] ?: -1
+
+    fun wordOf(id: Int): String? = byId.getOrNull(id)
 
     /** True when some dictionary word starts with [prefix]. */
     fun hasPrefix(prefix: String): Boolean {
