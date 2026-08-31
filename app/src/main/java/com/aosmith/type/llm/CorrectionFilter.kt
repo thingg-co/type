@@ -18,16 +18,19 @@ object CorrectionFilter {
         val candidate = raw.trim().trim('[', ']', '"', '.', ',', '!', '?', ':', ';').trim()
         if (candidate.isEmpty() || candidate.any { it.isWhitespace() }) return null
         if (candidate.equals(original, ignoreCase = true)) return null
-        val distance = Dictionary.editDistance(candidate.lowercase(), original.lowercase())
+        // Keyboard-weighted distance: adjacent-key slips barely count, so honest fat-finger
+        // fixes pass while same-length rewrites with distant letters stay blocked.
+        val distance = dictionary?.weightedDistance(candidate, original)
+            ?: Dictionary.editDistance(candidate.lowercase(), original.lowercase()).toFloat()
         val limit = when {
-            original.length <= 3 -> 1
-            original.length <= 6 -> 2
-            else -> 3
+            original.length <= 3 -> 1f
+            original.length <= 6 -> 2f
+            else -> 3f
         }
         if (distance > limit) return null
         val known = dictionary?.isKnown(candidate) ?: true
         // An unknown output is only trusted for a one-edit change; otherwise the model is guessing.
-        if (!known && distance > 1) return null
+        if (!known && distance > 1f) return null
         return Dictionary.matchCase(original, candidate)
     }
 

@@ -153,18 +153,24 @@ class Dictionary(words: Sequence<String>) {
     fun suggest(word: String, max: Int = 3): List<String> {
         val w = word.lowercase()
         if (w.isEmpty()) return emptyList()
-        val maxDistance = if (w.length <= 4) 1 else 2
+        val maxDistance = if (w.length <= 4) 1f else 2f
+        val span = 2
         val scored = ArrayList<Pair<String, Int>>()
-        val buf = DistanceBuffers(w.length + 1 + maxDistance)
-        for (len in (w.length - maxDistance)..(w.length + maxDistance)) {
+        val buf = DistanceBuffers(w.length + 1 + span)
+        for (len in (w.length - span)..(w.length + span)) {
             val bucket = byLength[len] ?: continue
             for (candidate in bucket) {
                 val d = boundedDistance(w, candidate, maxDistance, buf)
                 if (d > maxDistance) continue
                 val r = rank[candidate] ?: continue
-                // Distance dominates; frequency breaks ties. A first-letter match is a mild bonus.
-                val firstBonus = if (candidate[0] == w[0]) 0 else 3000
-                scored += candidate to (d * 100_000 + r + firstBonus)
+                // Weighted distance dominates (adjacent-key slips are cheap); frequency
+                // breaks ties, and a matching or neighbouring first letter helps a little.
+                val firstBonus = when {
+                    candidate[0] == w[0] -> 0
+                    KeyNeighbors.adjacent(candidate[0], w[0]) -> 1000
+                    else -> 3000
+                }
+                scored += candidate to ((d * 100_000).toInt() + r + firstBonus)
             }
         }
         scored.sortBy { it.second }
@@ -172,33 +178,33 @@ class Dictionary(words: Sequence<String>) {
     }
 
     private class DistanceBuffers(n: Int) {
-        var prev2 = IntArray(n)
-        var prev = IntArray(n)
-        var cur = IntArray(n)
+        var prev2 = FloatArray(n)
+        var prev = FloatArray(n)
+        var cur = FloatArray(n)
     }
 
-    /** Optimal-string-alignment distance with an early exit once every cell exceeds [limit]. */
-    private fun boundedDistance(a: String, b: String, limit: Int, buf: DistanceBuffers): Int {
+    /** Keyboard-weighted OSA distance with an early exit once every cell exceeds [limit]. */
+    private fun boundedDistance(a: String, b: String, limit: Float, buf: DistanceBuffers): Float {
         val m = a.length
         val n = b.length
-        if (kotlin.math.abs(m - n) > limit) return limit + 1
+        if (kotlin.math.abs(m - n) > limit + 0.01f) return limit + 1f
         var prev2 = buf.prev2
         var prev = buf.prev
         var cur = buf.cur
-        for (i in 0..m) prev[i] = i
+        for (i in 0..m) prev[i] = i.toFloat()
         for (j in 1..n) {
-            cur[0] = j
+            cur[0] = j.toFloat()
             var rowMin = cur[0]
             for (i in 1..m) {
-                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-                var v = minOf(prev[i] + 1, cur[i - 1] + 1, prev[i - 1] + cost)
+                val cost = KeyNeighbors.substitutionCost(a[i - 1], b[j - 1])
+                var v = minOf(prev[i] + 1f, cur[i - 1] + 1f, prev[i - 1] + cost)
                 if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
-                    v = minOf(v, prev2[i - 2] + 1)
+                    v = minOf(v, prev2[i - 2] + KeyNeighbors.TRANSPOSE_COST)
                 }
                 cur[i] = v
                 if (v < rowMin) rowMin = v
             }
-            if (rowMin > limit) return limit + 1
+            if (rowMin > limit) return limit + 1f
             val t = prev2
             prev2 = prev
             prev = cur
@@ -206,6 +212,10 @@ class Dictionary(words: Sequence<String>) {
         }
         return prev[m]
     }
+
+    /** Keyboard-weighted edit distance between two words (adjacent-key slips cost less). */
+    fun weightedDistance(a: String, b: String): Float =
+        boundedDistance(a.lowercase(), b.lowercase(), 1e9f, DistanceBuffers(maxOf(a.length, b.length) + 1))
 
     companion object {
 
