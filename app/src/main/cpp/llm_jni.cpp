@@ -1,4 +1,4 @@
-// JNI bridge between com.aosmith.board.llm.LlamaNative and llama.cpp.
+// JNI bridge between com.aosmith.type.llm.LlamaNative and llama.cpp.
 //
 // Design notes
 //  * One model, one context, one sequence. All calls are serialised with a mutex; the
@@ -22,7 +22,7 @@
 
 #include "llama.h"
 
-#define TAG "BoardLLM"
+#define TAG "TypeLLM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
@@ -124,7 +124,7 @@ void free_all_locked() {
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_com_aosmith_board_llm_LlamaNative_load(JNIEnv * env, jobject, jstring jpath, jint n_threads, jint n_ctx) {
+Java_com_aosmith_type_llm_LlamaNative_load(JNIEnv * env, jobject, jstring jpath, jint n_threads, jint n_ctx) {
     std::lock_guard<std::mutex> lock(g_mutex);
     free_all_locked();
 
@@ -171,19 +171,19 @@ Java_com_aosmith_board_llm_LlamaNative_load(JNIEnv * env, jobject, jstring jpath
 }
 
 JNIEXPORT void JNICALL
-Java_com_aosmith_board_llm_LlamaNative_free(JNIEnv *, jobject) {
+Java_com_aosmith_type_llm_LlamaNative_free(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(g_mutex);
     free_all_locked();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_aosmith_board_llm_LlamaNative_isLoaded(JNIEnv *, jobject) {
+Java_com_aosmith_type_llm_LlamaNative_isLoaded(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(g_mutex);
     return g_ctx != nullptr ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_aosmith_board_llm_LlamaNative_modelInfo(JNIEnv * env, jobject) {
+Java_com_aosmith_type_llm_LlamaNative_modelInfo(JNIEnv * env, jobject) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_model == nullptr) return nullptr;
     char desc[256] = {0};
@@ -195,7 +195,7 @@ Java_com_aosmith_board_llm_LlamaNative_modelInfo(JNIEnv * env, jobject) {
 // Renders a chat through the model's own template. roles/contents are parallel arrays.
 // Returns null when the model ships no template (the Kotlin side then falls back to ChatML).
 JNIEXPORT jbyteArray JNICALL
-Java_com_aosmith_board_llm_LlamaNative_formatChat(JNIEnv * env, jobject, jobjectArray roles, jobjectArray contents, jboolean add_assistant) {
+Java_com_aosmith_type_llm_LlamaNative_formatChat(JNIEnv * env, jobject, jobjectArray roles, jobjectArray contents, jboolean add_assistant) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_model == nullptr) return nullptr;
     const char * tmpl = llama_model_chat_template(g_model, nullptr);
@@ -227,7 +227,7 @@ Java_com_aosmith_board_llm_LlamaNative_formatChat(JNIEnv * env, jobject, jobject
 }
 
 JNIEXPORT jint JNICALL
-Java_com_aosmith_board_llm_LlamaNative_setPrefix(JNIEnv * env, jobject, jstring jprefix) {
+Java_com_aosmith_type_llm_LlamaNative_setPrefix(JNIEnv * env, jobject, jstring jprefix) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_ctx == nullptr) return -1;
     g_cancel.store(false);
@@ -248,7 +248,7 @@ Java_com_aosmith_board_llm_LlamaNative_setPrefix(JNIEnv * env, jobject, jstring 
 }
 
 JNIEXPORT jint JNICALL
-Java_com_aosmith_board_llm_LlamaNative_tokenCount(JNIEnv * env, jobject, jstring jtext) {
+Java_com_aosmith_type_llm_LlamaNative_tokenCount(JNIEnv * env, jobject, jstring jtext) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_ctx == nullptr) return -1;
     return (jint) tokenize(jstring_to_utf8(env, jtext), false, true).size();
@@ -257,7 +257,7 @@ Java_com_aosmith_board_llm_LlamaNative_tokenCount(JNIEnv * env, jobject, jstring
 // Greedy completion of `suffix` appended to the cached prefix. `grammar` is an optional
 // GBNF string constraining the output; `stop_at_newline` truncates at the first '\n'.
 JNIEXPORT jbyteArray JNICALL
-Java_com_aosmith_board_llm_LlamaNative_complete(JNIEnv * env, jobject, jstring jsuffix, jint max_tokens, jstring jgrammar, jboolean stop_at_newline) {
+Java_com_aosmith_type_llm_LlamaNative_complete(JNIEnv * env, jobject, jstring jsuffix, jint max_tokens, jstring jgrammar, jboolean stop_at_newline) {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_ctx == nullptr) return nullptr;
     g_cancel.store(false);
@@ -322,7 +322,7 @@ Java_com_aosmith_board_llm_LlamaNative_complete(JNIEnv * env, jobject, jstring j
 }
 
 JNIEXPORT void JNICALL
-Java_com_aosmith_board_llm_LlamaNative_cancel(JNIEnv *, jobject) {
+Java_com_aosmith_type_llm_LlamaNative_cancel(JNIEnv *, jobject) {
     g_cancel.store(true);
 }
 

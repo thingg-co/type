@@ -1,4 +1,4 @@
-package com.aosmith.board.ime
+package com.aosmith.type.ime
 
 import android.content.Context
 import android.graphics.Canvas
@@ -11,7 +11,7 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.ContextCompat
-import com.aosmith.board.R
+import com.aosmith.type.R
 import kotlin.math.max
 import kotlin.math.min
 

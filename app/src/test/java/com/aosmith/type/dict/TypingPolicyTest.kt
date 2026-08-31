@@ -1,4 +1,4 @@
-package com.aosmith.board.dict
+package com.aosmith.type.dict
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

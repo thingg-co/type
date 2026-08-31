@@ -1,4 +1,4 @@
-package com.aosmith.board.llm
+package com.aosmith.type.llm
 
 /**
  * Prompt material shared by the app and by tools/eval.py on the desktop. Keep the two in

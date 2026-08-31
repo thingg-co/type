@@ -1,1 +1,1 @@
--keep class com.aosmith.board.llm.LlamaNative { *; }
+-keep class com.aosmith.type.llm.LlamaNative { *; }

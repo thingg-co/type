@@ -4,16 +4,16 @@ plugins {
 }
 
 android {
-    namespace = "com.aosmith.board"
+    namespace = "com.aosmith.type"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.aosmith.board"
+        applicationId = "com.aosmith.type"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

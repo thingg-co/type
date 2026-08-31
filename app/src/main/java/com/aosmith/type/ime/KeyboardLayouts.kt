@@ -1,4 +1,4 @@
-package com.aosmith.board.ime
+package com.aosmith.type.ime
 
 enum class Layer { LETTERS, SYMBOLS, SYMBOLS2 }
 

@@ -1,4 +1,4 @@
-package com.aosmith.board.dict
+package com.aosmith.type.dict
 
 /** What the keyboard should offer for the word currently being typed. */
 sealed class MidWordAction {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Desktop evaluation of candidate models for Board's spell correction.
+"""Desktop evaluation of candidate models for Type's spell correction.
 
 Runs llama-server for each GGUF in turn and replays the exact prompts the app uses
 (see app/src/main/java/com/aosmith/board/llm/Prompts.kt). Reports accuracy on typo

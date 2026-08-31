@@ -1,7 +1,7 @@
-package com.aosmith.board.llm
+package com.aosmith.type.llm
 
-import com.aosmith.board.dict.Dictionary
-import com.aosmith.board.dict.TestWords
+import com.aosmith.type.dict.Dictionary
+import com.aosmith.type.dict.TestWords
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

@@ -1,4 +1,4 @@
-package com.aosmith.board.dict
+package com.aosmith.type.dict
 
 import java.io.BufferedReader
 import java.io.InputStream

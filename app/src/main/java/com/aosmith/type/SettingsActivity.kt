@@ -1,4 +1,4 @@
-package com.aosmith.board
+package com.aosmith.type
 
 import android.content.Context
 import android.content.Intent
@@ -15,10 +15,10 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.aosmith.board.model.ModelCatalog
-import com.aosmith.board.model.ModelDownloader
-import com.aosmith.board.model.ModelSpec
-import com.aosmith.board.model.ModelStore
+import com.aosmith.type.model.ModelCatalog
+import com.aosmith.type.model.ModelDownloader
+import com.aosmith.type.model.ModelSpec
+import com.aosmith.type.model.ModelStore
 import com.google.android.material.materialswitch.MaterialSwitch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -83,7 +83,7 @@ class SettingsActivity : AppCompatActivity() {
         bindSwitch(R.id.optAdaptive, prefs.adaptiveKeys) { prefs.adaptiveKeys = it }
         bindSwitch(R.id.optHaptics, prefs.haptics) { prefs.haptics = it }
 
-        findViewById<TextView>(R.id.version).text = "Board ${BuildConfig.VERSION_NAME} · llama.cpp · everything runs on this device"
+        findViewById<TextView>(R.id.version).text = "Type ${BuildConfig.VERSION_NAME} · llama.cpp · everything runs on this device"
 
         buildModelRows()
     }

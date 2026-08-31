@@ -1,10 +1,10 @@
-package com.aosmith.board
+package com.aosmith.type
 
 import android.content.Context
 import android.content.SharedPreferences
 
 class Prefs(context: Context) {
-    private val sp: SharedPreferences = context.getSharedPreferences("board", Context.MODE_PRIVATE)
+    private val sp: SharedPreferences = context.getSharedPreferences("type", Context.MODE_PRIVATE)
 
     var autocorrect: Boolean
         get() = sp.getBoolean("autocorrect", true)
@@ -22,7 +22,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("haptics", true)
         set(v) = sp.edit().putBoolean("haptics", v).apply()
 
-    /** Id from [com.aosmith.board.model.ModelCatalog], or a bare file name for imported models. */
+    /** Id from [com.aosmith.type.model.ModelCatalog], or a bare file name for imported models. */
     var modelId: String?
         get() = sp.getString("model_id", null)
         set(v) = sp.edit().putString("model_id", v).apply()

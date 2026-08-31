@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Board</string>
+    <string name="app_name">Type</string>
     <string name="subtype_en">English (US)</string>
 
-    <string name="settings_intro">Board is a keyboard that runs a small language model on the phone to fix typos. Nothing you type leaves the device.</string>
-    <string name="step_enable_title">1. Enable Board</string>
-    <string name="step_enable_body">Turn on Board in the system list of keyboards.</string>
+    <string name="settings_intro">Type is a keyboard that runs a small language model on the phone to fix typos. Nothing you type leaves the device.</string>
+    <string name="step_enable_title">1. Enable Type</string>
+    <string name="step_enable_body">Turn on Type in the system list of keyboards.</string>
     <string name="step_enable_button">Open keyboard settings</string>
     <string name="step_enable_done">Enabled</string>
-    <string name="step_select_title">2. Switch to Board</string>
-    <string name="step_select_body">Pick Board as the current keyboard.</string>
+    <string name="step_select_title">2. Switch to Type</string>
+    <string name="step_select_body">Pick Type as the current keyboard.</string>
     <string name="step_select_button">Choose keyboard</string>
-    <string name="step_select_done">Board is the current keyboard</string>
+    <string name="step_select_done">Type is the current keyboard</string>
     <string name="step_model_title">3. Download the model</string>
     <string name="step_model_body">The keyboard works without a model (dictionary suggestions only). Download one to get language model corrections.</string>
     <string name="model_download">Download</string>

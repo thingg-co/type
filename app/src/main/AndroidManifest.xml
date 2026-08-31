@@ -9,7 +9,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Board">
+        android:theme="@style/Theme.Type">
 
         <activity
             android:name=".SettingsActivity"
@@ -23,7 +23,7 @@
         </activity>
 
         <service
-            android:name=".ime.BoardInputMethodService"
+            android:name=".ime.TypeInputMethodService"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_INPUT_METHOD">

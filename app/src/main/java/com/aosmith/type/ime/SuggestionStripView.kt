@@ -1,4 +1,4 @@
-package com.aosmith.board.ime
+package com.aosmith.type.ime
 
 import android.content.Context
 import android.graphics.Typeface
@@ -9,7 +9,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import com.aosmith.board.R
+import com.aosmith.type.R
 
 /**
  * The row above the keys: a "fix sentence" button on the left, then up to three suggestion

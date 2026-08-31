@@ -1,4 +1,4 @@
-# Board
+# Type
 
 An Android keyboard that fixes typos with a small language model running on the phone.
 Everything happens on-device: the model is loaded into the keyboard process through
@@ -59,16 +59,16 @@ Only arm64-v8a is built. The first build compiles llama.cpp and takes a few minu
 To try it on a device or emulator:
 
 ```
-adb shell ime enable com.aosmith.board/.ime.BoardInputMethodService
-adb shell ime set com.aosmith.board/.ime.BoardInputMethodService
+adb shell ime enable com.aosmith.type/.ime.TypeInputMethodService
+adb shell ime set com.aosmith.type/.ime.TypeInputMethodService
 ```
 
-Then open Board, download a model (or import a `.gguf` you already have), and type in the
+Then open Type, download a model (or import a `.gguf` you already have), and type in the
 test field. For a debuggable build you can also push a model directly:
 
 ```
 adb push model.gguf /data/local/tmp/model.gguf
-adb shell run-as com.aosmith.board sh -c 'mkdir -p files/models && cp /data/local/tmp/model.gguf files/models/'
+adb shell run-as com.aosmith.type sh -c 'mkdir -p files/models && cp /data/local/tmp/model.gguf files/models/'
 ```
 
 ## Models

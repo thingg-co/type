@@ -1,7 +1,7 @@
-package com.aosmith.board.llm
+package com.aosmith.type.llm
 
 import android.util.Log
-import com.aosmith.board.dict.Dictionary
+import com.aosmith.type.dict.Dictionary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher

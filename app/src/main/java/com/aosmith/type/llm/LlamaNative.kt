@@ -1,9 +1,9 @@
-package com.aosmith.board.llm
+package com.aosmith.type.llm
 
 /** Thin JNI surface over llama.cpp. See app/src/main/cpp/llm_jni.cpp for the semantics. */
 object LlamaNative {
     init {
-        System.loadLibrary("board_llm")
+        System.loadLibrary("type_llm")
     }
 
     external fun load(modelPath: String, nThreads: Int, nCtx: Int): Boolean

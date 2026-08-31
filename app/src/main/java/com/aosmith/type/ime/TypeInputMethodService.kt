@@ -1,4 +1,4 @@
-package com.aosmith.board.ime
+package com.aosmith.type.ime
 
 import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
@@ -13,13 +13,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import com.aosmith.board.Prefs
-import com.aosmith.board.R
-import com.aosmith.board.dict.Dictionary
-import com.aosmith.board.dict.MidWordAction
-import com.aosmith.board.dict.TypingPolicy
-import com.aosmith.board.llm.SpellLlm
-import com.aosmith.board.model.ModelStore
+import com.aosmith.type.Prefs
+import com.aosmith.type.R
+import com.aosmith.type.dict.Dictionary
+import com.aosmith.type.dict.MidWordAction
+import com.aosmith.type.dict.TypingPolicy
+import com.aosmith.type.llm.SpellLlm
+import com.aosmith.type.model.ModelStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, SuggestionStripView.Listener {
+class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, SuggestionStripView.Listener {
 
     private lateinit var prefs: Prefs
     private lateinit var store: ModelStore
@@ -67,7 +67,7 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
         llm = SpellLlm { dictionary }
         prefs.registerListener(prefListener)
         mainScope.launch {
-            dictionary = withContext(Dispatchers.IO) { Dictionary.load(this@BoardInputMethodService) }
+            dictionary = withContext(Dispatchers.IO) { Dictionary.load(this@TypeInputMethodService) }
         }
         maybeLoadModel()
     }
@@ -84,8 +84,8 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(ContextCompat.getColor(context, R.color.kb_background))
         }
-        val s = SuggestionStripView(this).apply { listener = this@BoardInputMethodService }
-        val k = KeyboardView(this).apply { listener = this@BoardInputMethodService }
+        val s = SuggestionStripView(this).apply { listener = this@TypeInputMethodService }
+        val k = KeyboardView(this).apply { listener = this@TypeInputMethodService }
         container.addView(s, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, resources.getDimensionPixelSize(R.dimen.kb_strip_height)))
         container.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         // With targetSdk 35+ the IME window is edge-to-edge, so the bottom row would sit under the
@@ -377,7 +377,7 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
         val ic = currentInputConnection ?: return
         if (!suggestionsAllowed) return
         if (!llm.isReady) {
-            strip?.showStatus(if (llm.state is SpellLlm.State.Loading) "Model is still loading…" else "No model installed. Open Board to download one.")
+            strip?.showStatus(if (llm.state is SpellLlm.State.Loading) "Model is still loading…" else "No model installed. Open Type to download one.")
             return
         }
         val before = ic.getTextBeforeCursor(400, 0)?.toString() ?: return
@@ -488,7 +488,7 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
     }
 
     companion object {
-        private const val TAG = "BoardIME"
+        private const val TAG = "TypeIME"
         private const val LIVE_DEBOUNCE_MS = 350L
     }
 }

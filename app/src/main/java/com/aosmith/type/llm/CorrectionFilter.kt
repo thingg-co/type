@@ -1,6 +1,6 @@
-package com.aosmith.board.llm
+package com.aosmith.type.llm
 
-import com.aosmith.board.dict.Dictionary
+import com.aosmith.type.dict.Dictionary
 
 /**
  * Decides whether raw model output is allowed to touch the user's text. Pure functions,

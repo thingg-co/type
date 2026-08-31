@@ -1,8 +1,8 @@
-package com.aosmith.board.model
+package com.aosmith.type.model
 
 import android.content.Context
 import android.util.Log
-import com.aosmith.board.Prefs
+import com.aosmith.type.Prefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -115,7 +115,7 @@ object ModelDownloader {
                         connectTimeout = 20_000
                         readTimeout = 60_000
                         if (offset > 0) setRequestProperty("Range", "bytes=$offset-")
-                        setRequestProperty("User-Agent", "Board-Keyboard/0.1")
+                        setRequestProperty("User-Agent", "Type-Keyboard/0.1")
                     }
                     val code = conn.responseCode
                     if (code in 300..399 && redirects < 8) {
