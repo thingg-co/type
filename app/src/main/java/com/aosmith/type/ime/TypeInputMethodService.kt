@@ -136,7 +136,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         ViewCompat.setOnApplyWindowInsetsListener(container) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val stableNav = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars())
-            v.updatePadding(left = bars.left, right = bars.right, bottom = maxOf(bars.bottom, stableNav.bottom))
+            val gestures = insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
+            val tappable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.tappableElement())
+            // Transient taskbars are inconsistent about which inset carries their height
+            // (some report it stable, some only as a gesture region), so take them all.
+            val bottom = maxOf(bars.bottom, stableNav.bottom, gestures.bottom, tappable.bottom)
+            if (com.aosmith.type.BuildConfig.DEBUG) {
+                Log.d(TAG, "insets: bars=${bars.bottom} stableNav=${stableNav.bottom} gestures=${gestures.bottom} tappable=${tappable.bottom} -> $bottom")
+            }
+            v.updatePadding(left = bars.left, right = bars.right, bottom = bottom)
             insets
         }
         ViewCompat.requestApplyInsets(container)
@@ -175,6 +183,8 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
         correctionAllowed = suggestionsAllowed && prefs.autocorrect
 
+        // Taskbar/nav state can change between shows without a new inset dispatch; ask again.
+        (strip?.parent as? View)?.let { ViewCompat.requestApplyInsets(it) }
         keyboardView?.layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.SYMBOLS else Layer.LETTERS
         strip?.fixEnabled = suggestionsAllowed
         strip?.clear()
