@@ -168,9 +168,12 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
             variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
             variation == InputType.TYPE_TEXT_VARIATION_URI
-        val noSuggestions = inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0
+        // TYPE_TEXT_FLAG_NO_SUGGESTIONS is treated as advisory: Meta's apps stamp it on
+        // ordinary chat fields (Instagram DMs declare 0xac001), which would silence the
+        // keyboard exactly where people type most. Sensitive variations and the per-field
+        // no-personalized-learning flag remain fully honored.
         noLearning = info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
-        suggestionsAllowed = isText && !sensitive && !noSuggestions
+        suggestionsAllowed = isText && !sensitive
         // A screen recording captures the keyboard as its own window even when the editor
         // blacks itself out; while a sensitive field is focused, keep this window out of
         // captures too.
