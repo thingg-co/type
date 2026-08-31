@@ -181,6 +181,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             val finished = word.toString()
             word.clear()
             onWordBoundary(finished, text)
+            // The tracker and editor already agree on the empty word, so onUpdateSelection
+            // will not resync; evaluate the empty prefix here for next-word suggestions.
+            onWordChanged()
         }
         updateShift()
     }
@@ -282,8 +285,12 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     private fun cancelLive() {
         liveJob?.let {
-            it.cancel()
-            llm.cancelCurrent()
+            if (it.isActive) {
+                it.cancel()
+                // Only interrupt the native side for a request this job actually started;
+                // a finished job must not cancel someone else's decode (e.g. a boundary fix).
+                llm.cancelCurrent()
+            }
         }
         liveJob = null
     }

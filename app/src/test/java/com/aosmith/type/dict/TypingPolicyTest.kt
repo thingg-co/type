@@ -101,4 +101,13 @@ class TypingPolicyTest {
         val action = TypingPolicy.midWord(dict, bigrams, "borogove", "ca")
         assertEquals(listOf("can", "cat"), (action as MidWordAction.WordKeys).words)
     }
+
+    @Test fun `two-letter predictions appear only when context backs them`() {
+        // "ty" spans too many families for word keys; without context it stays quiet.
+        assertEquals(MidWordAction.None, TypingPolicy.midWord(dict, null, null, "ty"))
+        assertEquals(MidWordAction.None, TypingPolicy.midWord(dict, bigrams, "the", "ty"))
+        val afterCan = TypingPolicy.midWord(dict, bigrams, "can", "ty")
+        assertTrue("expected Predictions, got $afterCan", afterCan is MidWordAction.Predictions)
+        assertEquals("typist", (afterCan as MidWordAction.Predictions).words.first())
+    }
 }

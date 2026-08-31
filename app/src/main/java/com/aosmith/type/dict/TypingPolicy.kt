@@ -48,10 +48,14 @@ object TypingPolicy {
         if (completions.isNotEmpty()) return MidWordAction.WordKeys(completions)
 
         if (dict.hasPrefix(word)) {
-            if (word.length < 3) return MidWordAction.None
-            val predictions = rerank(dict, bigrams, previousWord, dict.predictions(word, CANDIDATES))
+            val candidates = rerank(dict, bigrams, previousWord, dict.predictions(word, CANDIDATES))
                 .filterNot { it.equals(word, ignoreCase = true) }
-                .take(PREDICTION_COUNT)
+            // Two-letter prefixes only speak up when the context genuinely knows something:
+            // "ha" after "should" is worth offering "have"; bare "ha" is noise.
+            val contextBacked = candidates.isNotEmpty() && previousWord != null && bigrams != null &&
+                bigrams.score(dict.idOf(previousWord), dict.idOf(candidates.first())) > 0
+            if (word.length < 3 && !contextBacked) return MidWordAction.None
+            val predictions = candidates.take(PREDICTION_COUNT)
             return if (predictions.isEmpty()) MidWordAction.None else MidWordAction.Predictions(predictions)
         }
 
