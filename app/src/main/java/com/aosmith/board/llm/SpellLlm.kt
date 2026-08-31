@@ -18,7 +18,7 @@ import kotlin.coroutines.coroutineContext
  * whole sentence); the fixed prefix for the active mode is kept in the KV cache so a request
  * only pays for its own few dozen tokens.
  */
-class SpellLlm(private val dictionary: Dictionary) {
+class SpellLlm(private val dictionaryProvider: () -> Dictionary?) {
 
     sealed class State {
         object Idle : State()
@@ -129,16 +129,10 @@ class SpellLlm(private val dictionary: Dictionary) {
     // ---- prompt plumbing -------------------------------------------------------------
 
     private fun buildTemplates() {
-        val (wp, wt) = splitTemplate(
-            Prompts.WORD_EXAMPLES.map { (u, a) -> (Prompts.WORD_INSTRUCTION + u) to a },
-            Prompts.WORD_INSTRUCTION,
-        )
+        val (wp, wt) = splitTemplate(Prompts.WORD_SYSTEM, Prompts.WORD_EXAMPLES)
         wordPrefix = wp
         wordTail = wt
-        val (sp, st) = splitTemplate(
-            Prompts.SENTENCE_EXAMPLES.map { (u, a) -> (Prompts.SENTENCE_INSTRUCTION + u) to a },
-            Prompts.SENTENCE_INSTRUCTION,
-        )
+        val (sp, st) = splitTemplate(Prompts.SENTENCE_SYSTEM, Prompts.SENTENCE_EXAMPLES)
         sentencePrefix = sp
         sentenceTail = st
     }
@@ -147,15 +141,15 @@ class SpellLlm(private val dictionary: Dictionary) {
      * Renders system + few-shot turns + a final user turn through the model's chat template
      * and splits the result at the point where the per-request text goes.
      */
-    private fun splitTemplate(examples: List<Pair<String, String>>, instruction: String): Pair<String, String> {
+    private fun splitTemplate(system: String, examples: List<Pair<String, String>>): Pair<String, String> {
         val roles = ArrayList<String>()
         val contents = ArrayList<String>()
-        roles += "system"; contents += Prompts.SYSTEM
+        roles += "system"; contents += system
         for ((u, a) in examples) {
             roles += "user"; contents += u
             roles += "assistant"; contents += a
         }
-        roles += "user"; contents += instruction + MARKER
+        roles += "user"; contents += MARKER
         var formatted = LlamaNative.formatChat(roles.toTypedArray(), contents.toTypedArray(), true)
             ?.toString(Charsets.UTF_8)
         if (formatted == null || !formatted.contains(MARKER)) {
@@ -204,7 +198,7 @@ class SpellLlm(private val dictionary: Dictionary) {
             else -> 3
         }
         if (distance > limit) return null
-        val known = dictionary.isKnown(candidate)
+        val known = dictionaryProvider()?.isKnown(candidate) ?: true
         // An unknown output is only trusted for a one-edit change; otherwise the model is guessing.
         if (!known && distance > 1) return null
         return Dictionary.matchCase(original, candidate)

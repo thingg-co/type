@@ -1,0 +1,12 @@
+Board is licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE):
+free for personal, hobby, research, educational and other noncommercial use.
+Commercial use needs a separate license from the author.
+
+Third-party components
+
+- llama.cpp (third_party/llama.cpp), MIT License, Copyright (c) 2023-2026 The ggml authors.
+- app/src/main/assets/en_words.txt is derived from the wordfreq project's English
+  frequency data (https://github.com/rspeer/wordfreq, data under CC BY-SA 4.0)
+  filtered against the macOS /usr/share/dict/words list (public domain, Webster's 1934).
+- Language models are downloaded by the user at runtime and are covered by their own
+  licenses (Qwen2.5: Apache-2.0).

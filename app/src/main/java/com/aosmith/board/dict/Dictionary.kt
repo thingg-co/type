@@ -52,30 +52,78 @@ class Dictionary private constructor(
         return node.children.mapValues { it.value.weight / total }
     }
 
-    /** Up to [max] known words within a small edit distance of [word], best first. */
+    /**
+     * Up to [max] known words within a small edit distance of [word], best first.
+     *
+     * Scans the words whose length is within two of the input and computes a bounded
+     * Damerau-Levenshtein distance for each. On a 52k-word list that is a few thousand
+     * comparisons, cheap enough for every keystroke on a background thread, and unlike
+     * generate-and-test it allocates nothing per candidate.
+     */
     fun suggest(word: String, max: Int = 3): List<String> {
         val w = word.lowercase()
         if (w.isEmpty()) return emptyList()
-        val scored = HashMap<String, Int>()
-        for (c in edits1(w)) rank[c]?.let { scored[c] = it }
-        if (scored.size < max && w.length in 4..10) {
-            for (e1 in edits1(w)) for (c in edits1(e1)) rank[c]?.let { r -> scored.merge(c, r + 20_000, ::minOf) }
-        }
-        return scored.entries.sortedBy { it.value }.take(max).map { matchCase(word, it.key) }
-    }
-
-    private fun edits1(w: String): Sequence<String> = sequence {
-        val n = w.length
-        for (i in 0..n) {
-            val left = w.substring(0, i)
-            val right = w.substring(i)
-            if (right.isNotEmpty()) yield(left + right.substring(1))
-            if (right.length > 1) yield(left + right[1] + right[0] + right.substring(2))
-            for (c in ALPHABET) {
-                if (right.isNotEmpty()) yield(left + c + right.substring(1))
-                yield(left + c + right)
+        val maxDistance = if (w.length <= 4) 1 else 2
+        val scored = ArrayList<Pair<String, Int>>()
+        val buf = DistanceBuffers(w.length + 1)
+        for (len in (w.length - maxDistance)..(w.length + maxDistance)) {
+            val bucket = byLength.get(len) ?: continue
+            for (candidate in bucket) {
+                val d = boundedDistance(w, candidate, maxDistance, buf)
+                if (d > maxDistance) continue
+                val r = rank[candidate] ?: continue
+                // Distance dominates; frequency breaks ties. A first-letter match is a mild bonus.
+                val firstBonus = if (candidate[0] == w[0]) 0 else 3000
+                scored += candidate to (d * 100_000 + r + firstBonus)
             }
         }
+        scored.sortBy { it.second }
+        return scored.take(max).map { matchCase(word, it.first) }
+    }
+
+    private val byLength: android.util.SparseArray<ArrayList<String>> by lazy {
+        val map = android.util.SparseArray<ArrayList<String>>()
+        for (w in rank.keys) {
+            val list = map.get(w.length) ?: ArrayList<String>().also { map.put(w.length, it) }
+            list += w
+        }
+        map
+    }
+
+    private class DistanceBuffers(n: Int) {
+        var prev2 = IntArray(n)
+        var prev = IntArray(n)
+        var cur = IntArray(n)
+    }
+
+    /** Optimal-string-alignment distance with an early exit once every cell exceeds [limit]. */
+    private fun boundedDistance(a: String, b: String, limit: Int, buf: DistanceBuffers): Int {
+        val m = a.length
+        val n = b.length
+        if (kotlin.math.abs(m - n) > limit) return limit + 1
+        var prev2 = buf.prev2
+        var prev = buf.prev
+        var cur = buf.cur
+        for (i in 0..m) prev[i] = i
+        for (j in 1..n) {
+            cur[0] = j
+            var rowMin = cur[0]
+            for (i in 1..m) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                var v = minOf(prev[i] + 1, cur[i - 1] + 1, prev[i - 1] + cost)
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
+                    v = minOf(v, prev2[i - 2] + 1)
+                }
+                cur[i] = v
+                if (v < rowMin) rowMin = v
+            }
+            if (rowMin > limit) return limit + 1
+            val t = prev2
+            prev2 = prev
+            prev = cur
+            cur = t
+        }
+        return prev[m]
     }
 
     companion object {

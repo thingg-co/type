@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board</title>
+<meta name="description" content="Board is an Android keyboard that fixes typos with a small language model running on the phone.">
+<style>
+  :root {
+    --bg: #f6f7f9; --fg: #1b1b1f; --muted: #5b6270; --accent: #1e6fd9; --card: #ffffff; --line: #dde1e7;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181c; --fg: #f3f4f6; --muted: #a2a8b3; --accent: #7cb2ff; --card: #1f2226; --line: #2e3238; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-size: 2.4rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .tag { color: var(--muted); margin: 0 0 32px; font-size: 1.1rem; }
+  h2 { font-size: 1.25rem; margin: 40px 0 10px; }
+  p { margin: 0 0 14px; }
+  a { color: var(--accent); }
+  .cta { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; margin: 6px 10px 6px 0; }
+  .cta.secondary { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+  ol { padding-left: 22px; }
+  li { margin-bottom: 8px; }
+  code { background: var(--card); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; font-size: 0.92em; }
+  pre { background: var(--card); border: 1px solid var(--line); padding: 12px 14px; border-radius: 10px; overflow-x: auto; font-size: 0.9em; }
+  .kbd { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin: 14px 0 0; }
+  .kbd span { background: var(--card); border: 1px solid var(--line); border-radius: 6px; text-align: center; padding: 8px 0; font-size: 0.95em; transition: transform .15s, opacity .15s; }
+  .kbd span.off { opacity: .35; transform: scale(.78); }
+  .kbd span.hot { font-weight: 700; color: var(--accent); }
+  footer { margin-top: 56px; color: var(--muted); font-size: 0.9em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Board</h1>
+  <p class="tag">An Android keyboard that fixes typos with a language model running on the phone.</p>
+
+  <p>
+    <a class="cta" href="https://github.com/thingg-co/type/releases/latest">Download APK</a>
+    <a class="cta secondary" href="https://github.com/thingg-co/type">Source on GitHub</a>
+  </p>
+
+  <h2>What it does</h2>
+  <p>Board is a normal QWERTY keyboard with one difference: when you finish a word that isn't in the dictionary, a small language model looks at the last few words and the word you typed and decides what you meant. If it is confident, the word is replaced and an undo chip appears in the suggestion bar. Backspace right after a correction also puts the original back.</p>
+  <p>The model runs inside the keyboard process through <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>. There is no network permission used for typing; the only download is the model file itself, which you pick and fetch from the settings screen.</p>
+
+  <h2>Adaptive keys</h2>
+  <p>As you type, the keyboard knows which letters can still continue a real word. Letters that can't are shrunk and dimmed; likely ones stay full size. The touch targets never change, so you can still type names and slang, it just gets visually quieter.</p>
+  <div class="card">
+    <div>After typing <code>th</code>:</div>
+    <div class="kbd">
+      <span class="off">q</span><span class="off">w</span><span class="hot">e</span><span>r</span><span class="off">t</span><span>y</span><span>u</span><span>i</span><span>o</span><span class="off">p</span>
+    </div>
+  </div>
+
+  <h2>Install</h2>
+  <ol>
+    <li>Download the APK and open it on the phone. Android will ask you to allow installs from this source.</li>
+    <li>Open Board. Step 1 turns the keyboard on in the system settings; step 2 switches to it.</li>
+    <li>Pick a model. The 0.5B model is quick on any recent phone; the 1.5B one is more accurate and best on flagship hardware. Both are stored in the app's private storage.</li>
+  </ol>
+  <p>Without a model the keyboard still works and falls back to dictionary suggestions.</p>
+
+  <h2>How the correction works</h2>
+  <p>The prompt has a fixed part (instructions and a handful of examples) and a short per-request part. The fixed part is decoded once and kept in the model's cache, so each correction only pays for a couple of dozen tokens plus the few it generates. Output is constrained with a grammar to a single word, then checked against edit distance and the dictionary before it is allowed to replace what you typed.</p>
+
+  <h2>Build it yourself</h2>
+<pre>git clone --recursive git@github.com:thingg-co/type.git
+cd type
+./gradlew assembleDebug
+adb install app/build/outputs/apk/debug/app-debug.apk</pre>
+  <p>Needs Android Studio's SDK with NDK 28 and CMake 3.31. English only for now; the layout and dictionary are data files, so other languages can be added without touching the input logic.</p>
+
+  <footer>
+    Free for personal and noncommercial use under the <a href="https://polyformproject.org/licenses/noncommercial/1.0.0">PolyForm Noncommercial License</a>. Commercial use needs a separate license.
+  </footer>
+</main>
+</body>
+</html>
