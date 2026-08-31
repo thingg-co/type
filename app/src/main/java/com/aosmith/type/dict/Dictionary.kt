@@ -23,6 +23,10 @@ class Dictionary(words: Sequence<String>) {
         var weight = 0f
     }
 
+    /** Common misspellings present in the word list; see [TypoTable]. */
+    @Volatile
+    var misspellings: TypoTable? = null
+
     private val rank = HashMap<String, Int>(80_000)
     private val root = Node()
     private val byLength = HashMap<Int, ArrayList<String>>()
@@ -54,9 +58,12 @@ class Dictionary(words: Sequence<String>) {
     fun isKnown(word: String): Boolean {
         if (word.isEmpty()) return false
         val w = word.lowercase()
+        val bad = misspellings
+        if (bad?.isMisspelling(w) == true) return false
         if (rank.containsKey(w)) return true
-        if (w.endsWith("'s") && rank.containsKey(w.dropLast(2))) return true
-        if (w.endsWith("s") && w.length > 3 && rank.containsKey(w.dropLast(1))) return true
+        // The suffix heuristics must not resurrect denylisted stems ("belives" -> "belive").
+        if (w.endsWith("'s") && rank.containsKey(w.dropLast(2)) && bad?.isMisspelling(w.dropLast(2)) != true) return true
+        if (w.endsWith("s") && w.length > 3 && rank.containsKey(w.dropLast(1)) && bad?.isMisspelling(w.dropLast(1)) != true) return true
         return false
     }
 
@@ -66,6 +73,8 @@ class Dictionary(words: Sequence<String>) {
     fun idOf(word: String): Int = rank[word.lowercase()] ?: -1
 
     fun wordOf(id: Int): String? = byId.getOrNull(id)
+
+    fun isMisspelledWord(word: String): Boolean = misspellings?.isMisspelling(word) == true
 
     /** True when some dictionary word starts with [prefix]. */
     fun hasPrefix(prefix: String): Boolean {
@@ -131,7 +140,13 @@ class Dictionary(words: Sequence<String>) {
             if (e.node.terminal) found += e.text
             for ((c, child) in e.node.children) queue.add(Entry(child, e.text + c))
         }
-        return found.sortedBy { rank[it] ?: Int.MAX_VALUE }.take(max).map { matchCase(prefix, it) }
+        val bad = misspellings
+        return found.asSequence()
+            .filter { bad?.isMisspelling(it) != true }
+            .sortedBy { rank[it] ?: Int.MAX_VALUE }
+            .take(max)
+            .map { matchCase(prefix, it) }
+            .toList()
     }
 
     /** Letters that can follow [prefix] in some dictionary word, weighted by frequency (sums to 1). */
@@ -174,7 +189,12 @@ class Dictionary(words: Sequence<String>) {
             }
         }
         scored.sortBy { it.second }
-        return scored.take(max).map { matchCase(word, it.first) }
+        val bad = misspellings
+        return scored.asSequence()
+            .filter { bad?.isMisspelling(it.first) != true }
+            .take(max)
+            .map { matchCase(word, it.first) }
+            .toList()
     }
 
     private class DistanceBuffers(n: Int) {

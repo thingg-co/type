@@ -20,6 +20,8 @@ import com.aosmith.type.dict.Dictionary
 import com.aosmith.type.dict.Lexer
 import com.aosmith.type.dict.NeuralLm
 import com.aosmith.type.dict.Personalizer
+import com.aosmith.type.dict.TypoTable
+import com.aosmith.type.dict.Contractions
 import com.aosmith.type.dict.MidWordAction
 import com.aosmith.type.dict.TypingPolicy
 import com.aosmith.type.llm.SpellLlm
@@ -82,7 +84,13 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         llm = SpellLlm { dictionary }
         prefs.registerListener(prefListener)
         mainScope.launch {
-            dictionary = withContext(Dispatchers.IO) { Dictionary.load(this@TypeInputMethodService) }
+            dictionary = withContext(Dispatchers.IO) {
+                Dictionary.load(this@TypeInputMethodService).also { d ->
+                    d.misspellings = runCatching { TypoTable.load(this@TypeInputMethodService) }
+                        .onFailure { Log.e(TAG, "typo table load failed", it) }
+                        .getOrNull()
+                }
+            }
             bigrams = withContext(Dispatchers.IO) {
                 runCatching { Bigrams.load(this@TypeInputMethodService) }
                     .onFailure { Log.e(TAG, "bigram load failed", it) }
@@ -381,14 +389,41 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (!correctionAllowed || finished.isEmpty() || finished.length > 24) return
         if (!finished.all { it.isLetter() || it == '\'' }) return
         if (finished.lowercase() in sessionAccepted) return
-        // Auto-apostrophe runs before the known-word gate: the word list knows "dont" as a
-        // word, which is precisely why the normal path can never fix it.
-        com.aosmith.type.dict.Contractions.fix(finished)?.let { fixed ->
+        // Known-fixes layer runs before the known-word gate: the word list knows "dont" and
+        // "belive" as words, which is precisely why the normal path can never fix them.
+        Contractions.fix(finished)?.let { fixed ->
             if (fixed != finished) applyCorrection(finished, separator, fixed)
             return
         }
-        if (finished.length < 2) return
         val dict = dictionary ?: return
+        dict.misspellings?.fix(finished)?.let { fixed ->
+            if (!fixed.equals(finished, ignoreCase = true)) applyCorrection(finished, separator, fixed)
+            return
+        }
+        if (finished.length < 2) return
+        // Ambiguous contractions ("were"/"we're"): the prediction net screens by context,
+        // and only a decisive margin sends the word to the language model to decide.
+        Contractions.ambiguousReading(finished)?.let { reading ->
+            val n = neural
+            if (n != null && llm.isReady) {
+                val beforeText = textBeforeWord(finished, separator) ?: ""
+                val ctx = Lexer.previousWords(beforeText, 5).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
+                val bareId = dict.idOf(finished)
+                val readId = dict.idOf(reading)
+                if (ctx.isNotEmpty() && bareId >= 0 && readId >= 0) {
+                    val scores = n.scoreCandidates(ctx, intArrayOf(bareId, readId))
+                    if (scores[1] - scores[0] > AMBIGUOUS_MARGIN) {
+                        mainScope.launch {
+                            val corrected = llm.correctWord(beforeText, finished)
+                            if (corrected != null && !corrected.equals(finished, ignoreCase = true)) {
+                                applyCorrection(finished, separator, corrected)
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         if (dict.isKnown(finished)) return
         val before = textBeforeWord(finished, separator) ?: ""
         mainScope.launch {
@@ -642,5 +677,6 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     companion object {
         private const val TAG = "TypeIME"
         private const val LIVE_DEBOUNCE_MS = 350L
+        private const val AMBIGUOUS_MARGIN = 2.0f
     }
 }

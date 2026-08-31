@@ -27,6 +27,24 @@ class ContractionsTest {
         assertEquals("I've", Contractions.fix("ive"))
     }
 
+    @Test fun `extended forms fix too`() {
+        assertEquals("that'll", Contractions.fix("thatll"))
+        assertEquals("why'd", Contractions.fix("whyd"))
+        assertEquals("who'll", Contractions.fix("wholl"))
+        assertEquals("shan't", Contractions.fix("shant"))
+    }
+
+    @Test fun `ambiguous forms are exposed for context screening, never map-fixed`() {
+        for ((bare, reading) in listOf(
+            "were" to "we're", "well" to "we'll", "ill" to "I'll", "id" to "I'd",
+            "its" to "it's", "lets" to "let's", "hell" to "he'll", "wed" to "we'd",
+        )) {
+            assertNull("must not auto-fix $bare", Contractions.fix(bare))
+            assertEquals(reading, Contractions.ambiguousReading(bare))
+        }
+        assertNull(Contractions.ambiguousReading("hello"))
+    }
+
     @Test fun `words someone may have meant stay untouched`() {
         for (w in listOf("were", "ill", "id", "hell", "wed", "shed", "lets", "well", "its", "hello", "cannot")) {
             assertNull("should not touch $w", Contractions.fix(w))

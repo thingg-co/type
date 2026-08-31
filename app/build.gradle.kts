@@ -12,8 +12,8 @@ android {
         applicationId = "com.aosmith.type"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.5"
+        versionCode = 5
+        versionName = "0.5.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

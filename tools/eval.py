@@ -85,6 +85,18 @@ WORD_CASES = [
     ("good", "morninf", "morning"),
     ("see you", "tonighy", "tonight"),
     ("that sounds", "grwat", "great"),
+    # ambiguous contractions: context should decide
+    ("i think", "were", "we're"),
+    ("they said we", "were", "were"),
+    ("i think", "ill", "I'll"),
+    ("he was very", "ill", "ill"),
+    ("do you think", "its", "it's"),
+    ("the dog wagged", "its", "its"),
+    ("maybe", "lets", "let's"),
+    ("she", "lets", "lets"),
+    ("i hope", "well", "we'll"),
+    ("that went", "well", "well"),
+    ("if so", "id", "I'd"),
     # should be left alone
     ("my friend", "Priya", "Priya"),
     ("we use", "kubernetes", "kubernetes"),

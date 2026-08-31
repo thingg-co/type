@@ -85,7 +85,7 @@ object TypingPolicy {
         // Never suggest the word that was just typed: doubled words are almost never wanted,
         // and personalization biases would otherwise parrot frequent words back.
         val prev = previousWords.lastOrNull()
-        return words.filterNot { it.equals(prev, ignoreCase = true) }
+        return words.filterNot { it.equals(prev, ignoreCase = true) || dict.isMisspelledWord(it) }
             .take(max)
             // The vocabulary is lowercase; the pronoun is the one word English always capitalizes.
             .map { if (it == "i" || it.startsWith("i'")) it.replaceFirstChar { c -> c.uppercaseChar() } else it }
