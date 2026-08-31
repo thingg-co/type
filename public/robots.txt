@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://type.thingg.co/sitemap.xml
