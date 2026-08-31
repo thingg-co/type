@@ -20,6 +20,12 @@ Site: https://thingg-co.github.io/type/
   replaced; the bigram table stays as an instant fallback. If what you typed cannot start
   any dictionary word, dictionary candidates appear immediately and the correction model is
   asked after a short pause.
+- Bare contractions get their apostrophes at the word boundary ("dont" becomes "don't",
+  "im" becomes "I'm") from a curated map, instantly and with undo; ambiguous forms like
+  "were" and "ill" are left alone.
+- Suggestions and correction limits use keyboard-weighted edit distance: substituting an
+  adjacent key barely counts, so the fat-finger explanation wins ("cst" suggests "cat",
+  not "cut").
 - The ✨ button sends the current sentence to the model for a whole-sentence pass.
 - Optional on-device learning: what you type trains a small personal delta over the frozen
   prediction network (word ids only, app-private, never leaves the phone). A settings toggle

@@ -104,7 +104,7 @@
   </div>
 
   <h2>What it does</h2>
-  <p>Type is a normal QWERTY keyboard with one difference: when you finish a word that isn't in the dictionary, a small language model looks at the last few words and decides what you meant. If it is confident, the word is replaced and an undo chip appears in the bar. Backspace right after a correction also puts the original back.</p>
+  <p>Type is a normal QWERTY keyboard with one difference: when you finish a word that isn't in the dictionary, a small language model looks at the last few words and decides what you meant. If it is confident, the word is replaced and an undo chip appears in the bar. Backspace right after a correction also puts the original back. Bare contractions get their apostrophes on the spot ("dont" becomes "don't", "im" becomes "I'm"), and everything that ranks candidates knows the key layout, so a slip onto a neighbouring key is treated as the likely explanation.</p>
   <p>Typing is also captured by nothing else: the keyboard drops out of screenshots and recordings while a password field is focused, ignores touches that arrive through overlays, and skips learning in sensitive fields. While a word is still being typed, the dictionary and a sequence model do the work instead: the bar offers the most likely next word right after a space, completions are ranked by the words before them ("should ha" puts <i>have</i> up front), letters that can't continue any word fade away, and when only a few words remain possible they take over the keyboard as buttons. The correction model is only consulted mid-word once what you've typed can no longer start any dictionary word. The ✨ button runs a whole-sentence pass.</p>
 
   <h2>Which model</h2>
