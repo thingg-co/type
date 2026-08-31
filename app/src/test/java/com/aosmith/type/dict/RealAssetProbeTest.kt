@@ -19,7 +19,7 @@ class RealAssetProbeTest {
         println("predictions(ha)=${dict.predictions("ha", 8)}")
         println("completions(ha,3)=${dict.completions("ha", 3)}")
         println("hasPrefix(ha)=${dict.hasPrefix("ha")}")
-        val action = TypingPolicy.midWord(dict, bigrams, "should", "ha")
+        val action = TypingPolicy.midWord(dict, bigrams, null, listOf("should"), "ha")
         println("ACTION=$action")
         assertTrue("got $action", action is MidWordAction.Predictions)
     }

@@ -18,6 +18,7 @@ import com.aosmith.type.R
 import com.aosmith.type.dict.Bigrams
 import com.aosmith.type.dict.Dictionary
 import com.aosmith.type.dict.Lexer
+import com.aosmith.type.dict.NeuralLm
 import com.aosmith.type.dict.MidWordAction
 import com.aosmith.type.dict.TypingPolicy
 import com.aosmith.type.llm.SpellLlm
@@ -39,6 +40,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     @Volatile private var dictionary: Dictionary? = null
     @Volatile private var bigrams: Bigrams? = null
+    @Volatile private var neural: NeuralLm? = null
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -74,6 +76,11 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             bigrams = withContext(Dispatchers.IO) {
                 runCatching { Bigrams.load(this@TypeInputMethodService) }
                     .onFailure { Log.e(TAG, "bigram load failed", it) }
+                    .getOrNull()
+            }
+            neural = withContext(Dispatchers.IO) {
+                runCatching { loadNeural() }
+                    .onFailure { Log.i(TAG, "next-word network unavailable: ${it.message}") }
                     .getOrNull()
             }
         }
@@ -243,9 +250,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
         liveJob = mainScope.launch {
             val beforeText = textBeforeWord(current) ?: ""
-            val prev = Lexer.previousWord(beforeText)
-            val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, prev, current) }
-            Log.d(TAG, "midWord '$current' prev=$prev bigrams=${bigrams != null} -> ${action.javaClass.simpleName}")
+            val prevWords = Lexer.previousWords(beforeText, 3)
+            val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, neural, prevWords, current) }
+            Log.d(TAG, "midWord '$current' prev=$prevWords neural=${neural != null} -> ${action.javaClass.simpleName}")
             if (word.toString() != current) return@launch
             if (action !is MidWordAction.WordKeys) keyboardView?.wordTakeover = null
             when (action) {
@@ -499,6 +506,25 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             val ok = llm.ensureLoaded(file, threads)
             if (ok && !wasReady) Log.i(TAG, "model ready: ${file.name}")
         }
+    }
+
+    /**
+     * The network's dense arrays load from the asset; the native top-k needs a real file,
+     * so the asset is copied into filesDir once. Absent asset (model not shipped) means
+     * null, and everything falls back to bigrams.
+     */
+    private fun loadNeural(): NeuralLm {
+        val f = java.io.File(filesDir, "en_nextword.bin")
+        val assetSize = assets.open("en_nextword.bin").use { it.available().toLong() }
+        if (!f.exists() || f.length() != assetSize) {
+            assets.open("en_nextword.bin").use { src ->
+                f.outputStream().use { dst -> src.copyTo(dst, 1 shl 20) }
+            }
+        }
+        if (!com.aosmith.type.llm.LlamaNative.nnLoad(f.absolutePath)) {
+            Log.w(TAG, "native next-word matvec unavailable; using the Kotlin fallback")
+        }
+        return NeuralLm.load(this)
     }
 
     private fun defaultThreads(): Int {

@@ -15,4 +15,9 @@ object LlamaNative {
     external fun tokenCount(text: String): Int
     external fun complete(suffix: String, maxTokens: Int, grammar: String?, stopAtNewline: Boolean): ByteArray?
     external fun cancel()
+
+    // Next-word network (asset copied to a file; see dict/NeuralLm.kt)
+    external fun nnLoad(path: String): Boolean
+    external fun nnTopK(hidden: ByteArray, hiddenScale: Float, k: Int): IntArray?
+    external fun nnFree()
 }

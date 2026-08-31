@@ -19,6 +19,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <cstdio>
+#include <cstdlib>
 
 #include "llama.h"
 
@@ -43,6 +45,20 @@ std::vector<llama_token> g_prefix_tokens;
 bool                     g_prefix_in_cache = false;
 
 std::atomic<bool> g_cancel{false};
+
+// ---- next-word network (see dict/NeuralLm.kt and tools/nn/train.py) ----
+std::mutex g_nn_mutex;
+int8_t * g_nn_emb   = nullptr;
+float *  g_nn_scale = nullptr;
+float *  g_nn_bout  = nullptr;
+int      g_nn_v = 0, g_nn_k = 0, g_nn_e = 0;
+
+void nn_free_locked() {
+    free(g_nn_emb);   g_nn_emb = nullptr;
+    free(g_nn_scale); g_nn_scale = nullptr;
+    free(g_nn_bout);  g_nn_bout = nullptr;
+    g_nn_v = g_nn_k = g_nn_e = 0;
+}
 
 void log_callback(ggml_log_level level, const char * text, void *) {
     int prio;
@@ -324,6 +340,90 @@ Java_com_aosmith_type_llm_LlamaNative_complete(JNIEnv * env, jobject, jstring js
 JNIEXPORT void JNICALL
 Java_com_aosmith_type_llm_LlamaNative_cancel(JNIEnv *, jobject) {
     g_cancel.store(true);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_aosmith_type_llm_LlamaNative_nnLoad(JNIEnv * env, jobject, jstring jpath) {
+    std::lock_guard<std::mutex> lock(g_nn_mutex);
+    nn_free_locked();
+    const std::string path = jstring_to_utf8(env, jpath);
+    FILE * f = fopen(path.c_str(), "rb");
+    if (f == nullptr) { LOGE("nn: cannot open %s", path.c_str()); return JNI_FALSE; }
+    char magic[4];
+    int32_t dims[3];
+    bool ok = fread(magic, 1, 4, f) == 4 && memcmp(magic, "TNW1", 4) == 0 &&
+              fread(dims, 4, 3, f) == 3;
+    if (ok) {
+        g_nn_v = __builtin_bswap32((uint32_t) dims[0]);
+        g_nn_k = __builtin_bswap32((uint32_t) dims[1]);
+        g_nn_e = __builtin_bswap32((uint32_t) dims[2]);
+        const size_t n = (size_t) g_nn_v * g_nn_e;
+        g_nn_emb = (int8_t *) malloc(n);
+        g_nn_scale = (float *) malloc((size_t) g_nn_v * 4);
+        g_nn_bout = (float *) malloc((size_t) g_nn_v * 4);
+        ok = g_nn_emb && g_nn_scale && g_nn_bout && fread(g_nn_emb, 1, n, f) == n &&
+             fread(g_nn_scale, 4, g_nn_v, f) == (size_t) g_nn_v;
+        if (ok) {
+            // skip W1 and b1 (the Kotlin side runs the trunk)
+            ok = fseek(f, (long) ((size_t) g_nn_e * g_nn_k * g_nn_e + g_nn_e) * 4, SEEK_CUR) == 0 &&
+                 fread(g_nn_bout, 4, g_nn_v, f) == (size_t) g_nn_v;
+        }
+        if (ok) {
+            // file floats are big-endian
+            for (int i = 0; i < g_nn_v; i++) {
+                uint32_t * s1 = (uint32_t *) &g_nn_scale[i];
+                uint32_t * s2 = (uint32_t *) &g_nn_bout[i];
+                *s1 = __builtin_bswap32(*s1);
+                *s2 = __builtin_bswap32(*s2);
+            }
+        }
+    }
+    fclose(f);
+    if (!ok) { LOGE("nn: load failed"); nn_free_locked(); return JNI_FALSE; }
+    LOGI("nn: loaded V=%d K=%d E=%d", g_nn_v, g_nn_k, g_nn_e);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jintArray JNICALL
+Java_com_aosmith_type_llm_LlamaNative_nnTopK(JNIEnv * env, jobject, jbyteArray jh, jfloat h_scale, jint k) {
+    std::lock_guard<std::mutex> lock(g_nn_mutex);
+    if (g_nn_emb == nullptr) return nullptr;
+    const int e = g_nn_e;
+    if (env->GetArrayLength(jh) != e || k <= 0) return nullptr;
+    std::vector<int8_t> h((size_t) e);
+    env->GetByteArrayRegion(jh, 0, e, reinterpret_cast<jbyte *>(h.data()));
+
+    const int specials = 2; // BOS and UNK are never suggested
+    const int limit = g_nn_v - specials;
+    std::vector<std::pair<float, int>> best;
+    best.reserve((size_t) k + 1);
+    float worst = -1e30f;
+    for (int v = 0; v < limit; v++) {
+        const int8_t * row = g_nn_emb + (size_t) v * e;
+        int32_t acc = 0;
+        for (int j = 0; j < e; j++) acc += (int32_t) row[j] * h[j];
+        const float s = acc * g_nn_scale[v] * h_scale + g_nn_bout[v];
+        if ((int) best.size() < k) {
+            best.emplace_back(s, v);
+            std::sort(best.begin(), best.end(), std::greater<>());
+            worst = best.back().first;
+        } else if (s > worst) {
+            best.back() = {s, v};
+            std::sort(best.begin(), best.end(), std::greater<>());
+            worst = best.back().first;
+        }
+    }
+    jintArray out = env->NewIntArray((jsize) best.size());
+    std::vector<jint> ids(best.size());
+    for (size_t i = 0; i < best.size(); i++) ids[i] = best[i].second;
+    env->SetIntArrayRegion(out, 0, (jsize) ids.size(), ids.data());
+    return out;
+}
+
+JNIEXPORT void JNICALL
+Java_com_aosmith_type_llm_LlamaNative_nnFree(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(g_nn_mutex);
+    nn_free_locked();
 }
 
 } // extern "C"
