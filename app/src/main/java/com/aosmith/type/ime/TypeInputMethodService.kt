@@ -19,6 +19,7 @@ import com.aosmith.type.dict.Bigrams
 import com.aosmith.type.dict.Dictionary
 import com.aosmith.type.dict.Lexer
 import com.aosmith.type.dict.NeuralLm
+import com.aosmith.type.dict.Personalizer
 import com.aosmith.type.dict.MidWordAction
 import com.aosmith.type.dict.TypingPolicy
 import com.aosmith.type.llm.SpellLlm
@@ -41,6 +42,8 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     @Volatile private var dictionary: Dictionary? = null
     @Volatile private var bigrams: Bigrams? = null
     @Volatile private var neural: NeuralLm? = null
+    @Volatile private var personalizer: Personalizer? = null
+    private var noLearning = false
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -62,8 +65,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "model_id") maybeLoadModel()
+        if (key == "learn_typing") neural?.personal = if (prefs.learnFromTyping) personalizer else null
+        if (key == "personal_cleared") {
+            personalizer?.clear()
+            personalFile().delete()
+        }
         applyPrefsToViews()
     }
+
+    private fun personalFile() = java.io.File(filesDir, "personal.bin")
 
     override fun onCreate() {
         super.onCreate()
@@ -82,6 +92,21 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 runCatching { loadNeural() }
                     .onFailure { Log.i(TAG, "next-word network unavailable: ${it.message}") }
                     .getOrNull()
+            }
+            neural?.let { n ->
+                personalizer = withContext(Dispatchers.IO) {
+                    Personalizer(n).also { p ->
+                        runCatching {
+                            personalFile().takeIf { it.exists() }?.inputStream()?.use(p::load)
+                        }.onFailure {
+                            Log.w(TAG, "personalization state discarded: ${it.message}")
+                            p.clear()
+                            personalFile().delete()
+                        }
+                    }
+                }
+                if (prefs.learnFromTyping) n.personal = personalizer
+                Log.i(TAG, "personalization ready: ${personalizer?.lifetimeSamples ?: -1} lifetime samples")
             }
         }
         maybeLoadModel()
@@ -136,6 +161,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
             variation == InputType.TYPE_TEXT_VARIATION_URI
         val noSuggestions = inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0
+        noLearning = info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         suggestionsAllowed = isText && !sensitive && !noSuggestions
         correctionAllowed = suggestionsAllowed && prefs.autocorrect
 
@@ -155,6 +181,16 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        personalizer?.let { p ->
+            if (prefs.learnFromTyping && p.pendingSamples > 0) {
+                mainScope.launch(Dispatchers.Default) {
+                    val n = p.pendingSamples
+                    val t0 = System.currentTimeMillis()
+                    p.trainAndMaybeSave(personalFile())
+                    Log.d(TAG, "personal train burst over $n samples (${System.currentTimeMillis() - t0} ms)")
+                }
+            }
+        }
         cancelLive()
         sentenceJob?.cancel()
         word.clear()
@@ -255,7 +291,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
         liveJob = mainScope.launch {
             val beforeText = textBeforeWord(current) ?: ""
-            val prevWords = Lexer.previousWords(beforeText, 3)
+            val prevWords = Lexer.previousWords(beforeText, 5)
             val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, neural, prevWords, current) }
             Log.d(TAG, "midWord '$current' prev=$prevWords neural=${neural != null} -> ${action.javaClass.simpleName}")
             if (word.toString() != current) return@launch
@@ -312,6 +348,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         keyboardView?.keyWeights = null
         keyboardView?.wordTakeover = null
         suppressedTakeoverPrefix = null
+        if (finished.isNotEmpty()) recordTyped(finished, separator)
         if (pendingUndo == null || !undoArmed) strip?.clear()
         if (!correctionAllowed || finished.length < 2 || finished.length > 24) return
         if (!finished.all { it.isLetter() || it == '\'' }) return
@@ -328,6 +365,23 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 applyCorrection(finished, separator, corrected)
             }
         }
+    }
+
+    /**
+     * Feeds one finished in-vocabulary word into personalization. Guarded by the setting,
+     * the field type, and the editor's no-personalized-learning flag; only word ids are
+     * stored, never text, and nothing is captured from sensitive fields.
+     */
+    private fun recordTyped(finished: String, separator: String) {
+        if (!prefs.learnFromTyping || !suggestionsAllowed || noLearning) return
+        val dict = dictionary ?: return
+        val n = neural ?: return
+        val p = personalizer ?: return
+        val target = dict.idOf(finished)
+        if (target < 0) return
+        val before = textBeforeWord(finished, separator) ?: return
+        val ctx = Lexer.previousWords(before, 5).map { dict.idOf(it).let { id -> if (id >= 0) id else n.unk } }
+        p.record(ctx, target)
     }
 
     /** Without a model only very safe fixes are applied: one edit away from a common word. */
@@ -394,6 +448,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (current.isNotEmpty()) ic.deleteSurroundingText(current.length, 0)
         ic.commitText(Dictionary.matchCase(current.ifEmpty { text }, text) + " ", 1)
         ic.endBatchEdit()
+        recordTyped(text, " ")
         word.clear()
         keyboardView?.keyWeights = null
         keyboardView?.wordTakeover = null

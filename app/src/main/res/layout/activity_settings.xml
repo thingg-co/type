@@ -137,6 +137,20 @@
             android:layout_height="wrap_content"
             android:text="@string/opt_haptics" />
 
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/optLearn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/opt_learn" />
+
+        <Button
+            android:id="@+id/forgetButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/forget_learned" />
+
         <!-- Test field -->
         <TextView
             android:layout_width="match_parent"

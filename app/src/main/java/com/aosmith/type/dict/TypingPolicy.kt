@@ -74,16 +74,21 @@ object TypingPolicy {
     fun nextWords(dict: Dictionary, bigrams: Bigrams?, neural: NeuralLm?, previousWords: List<String>, max: Int): List<String> {
         val words = if (neural != null) {
             val ctx = contextIds(dict, neural, previousWords) ?: return emptyList()
-            neural.topNext(ctx, max).mapNotNull { dict.wordOf(it) }
+            neural.topNext(ctx, max + 1).mapNotNull { dict.wordOf(it) }
         } else {
             val prev = previousWords.lastOrNull() ?: return emptyList()
             if (bigrams == null) return emptyList()
             val prevId = dict.idOf(prev)
             if (prevId < 0) return emptyList()
-            bigrams.nextWords(prevId, max).mapNotNull { dict.wordOf(it.first) }
+            bigrams.nextWords(prevId, max + 1).mapNotNull { dict.wordOf(it.first) }
         }
-        // The vocabulary is lowercase; the pronoun is the one word English always capitalizes.
-        return words.map { if (it == "i" || it.startsWith("i'")) it.replaceFirstChar { c -> c.uppercaseChar() } else it }
+        // Never suggest the word that was just typed: doubled words are almost never wanted,
+        // and personalization biases would otherwise parrot frequent words back.
+        val prev = previousWords.lastOrNull()
+        return words.filterNot { it.equals(prev, ignoreCase = true) }
+            .take(max)
+            // The vocabulary is lowercase; the pronoun is the one word English always capitalizes.
+            .map { if (it == "i" || it.startsWith("i'")) it.replaceFirstChar { c -> c.uppercaseChar() } else it }
     }
 
     /**

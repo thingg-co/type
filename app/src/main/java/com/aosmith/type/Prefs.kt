@@ -18,6 +18,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("adaptive_keys", true)
         set(v) = sp.edit().putBoolean("adaptive_keys", v).apply()
 
+    var learnFromTyping: Boolean
+        get() = sp.getBoolean("learn_typing", true)
+        set(v) = sp.edit().putBoolean("learn_typing", v).apply()
+
+    /** Bumped when the user asks to forget learned typing; the service reacts to the change. */
+    var personalCleared: Long
+        get() = sp.getLong("personal_cleared", 0)
+        set(v) = sp.edit().putLong("personal_cleared", v).apply()
+
     var haptics: Boolean
         get() = sp.getBoolean("haptics", true)
         set(v) = sp.edit().putBoolean("haptics", v).apply()

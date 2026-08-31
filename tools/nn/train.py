@@ -30,7 +30,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-K = 3
+K = 3  # overridden by --k
 
 
 def load_stream(path):
@@ -72,6 +72,8 @@ class NextWord(nn.Module):
 def main():
     data_dir, out_dir = sys.argv[1], sys.argv[2]
     args = sys.argv[3:]
+    global K
+    K = int(args[args.index("--k") + 1]) if "--k" in args else K
     steps = int(args[args.index("--steps") + 1]) if "--steps" in args else 30000
     E = int(args[args.index("--dim") + 1]) if "--dim" in args else 128
     B = int(args[args.index("--batch") + 1]) if "--batch" in args else 1024

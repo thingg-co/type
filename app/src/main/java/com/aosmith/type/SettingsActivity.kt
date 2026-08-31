@@ -82,6 +82,12 @@ class SettingsActivity : AppCompatActivity() {
         bindSwitch(R.id.optLive, prefs.liveSuggestions) { prefs.liveSuggestions = it }
         bindSwitch(R.id.optAdaptive, prefs.adaptiveKeys) { prefs.adaptiveKeys = it }
         bindSwitch(R.id.optHaptics, prefs.haptics) { prefs.haptics = it }
+        bindSwitch(R.id.optLearn, prefs.learnFromTyping) { prefs.learnFromTyping = it }
+        findViewById<Button>(R.id.forgetButton).setOnClickListener {
+            java.io.File(filesDir, "personal.bin").delete()
+            prefs.personalCleared = System.currentTimeMillis()
+            Toast.makeText(this, "Learned typing forgotten", Toast.LENGTH_SHORT).show()
+        }
 
         findViewById<TextView>(R.id.version).text = "Type ${BuildConfig.VERSION_NAME} · llama.cpp · everything runs on this device"
 

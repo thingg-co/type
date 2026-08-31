@@ -28,6 +28,8 @@
     <string name="opt_live_suggestions">Ask the model for suggestions while typing</string>
     <string name="opt_adaptive_keys">Adaptive keys (shrink letters that cannot continue the word)</string>
     <string name="opt_haptics">Vibrate on key press</string>
+    <string name="opt_learn">Learn from my typing (stays on this device)</string>
+    <string name="forget_learned">Forget learned typing</string>
 
     <string name="test_title">Try it</string>
     <string name="test_hint">Type here. Try “I will meet you at the resturant tommorow”.</string>

@@ -53,7 +53,7 @@ b1 = np.frombuffer(raw[o:o + 4 * E], dtype=">f4").astype(np.float32); o += 4 * E
 bout = np.frombuffer(raw[o:o + 4 * V], dtype=">f4").astype(np.float32)
 
 def nn_logits(ctx):
-    ctx = ([BOS] * K + ctx)[-K:]
+    ctx = ([BOS] * KK + ctx)[-KK:]
     x = (q[ctx].astype(np.float32) * scale[ctx, None]).flatten()
     h = np.maximum(w1 @ x + b1, 0)
     hs = max(np.abs(h).max() / 127.0, 1e-8)

@@ -33,7 +33,21 @@ class NeuralLm private constructor(
     val bos: Int get() = vocab - 2
     val unk: Int get() = vocab - 1
 
-    class Hidden(val q: ByteArray, val scale: Float)
+    /** Sparse user-taught delta applied on top of the frozen base; see [Personalizer]. */
+    @Volatile
+    var personal: Personalizer? = null
+
+    class Hidden(val q: ByteArray, val scale: Float, val f: FloatArray)
+
+    internal fun embRowInto(id: Int, out: FloatArray) {
+        val row = id * dim
+        val s = scale[id]
+        for (j in 0 until dim) out[j] = emb[row + j] * s
+    }
+
+    internal fun trunkW(): FloatArray = w1
+
+    internal fun trunkB(): FloatArray = b1
 
     /** Left-pads with BOS, maps unknown ids to UNK, and runs the dense trunk. */
     fun hidden(contextIds: List<Int>): Hidden {
@@ -48,6 +62,9 @@ class NeuralLm private constructor(
             val row = ctx[i] * dim
             val s = scale[ctx[i]]
             for (j in 0 until dim) x[i * dim + j] = emb[row + j] * s
+            personal?.inputDelta(ctx[i])?.let { d ->
+                for (j in 0 until dim) x[i * dim + j] += d[j]
+            }
         }
         val h = FloatArray(dim)
         var absMax = 1e-8f
@@ -62,15 +79,24 @@ class NeuralLm private constructor(
         val hs = absMax / 127f
         val q = ByteArray(dim)
         for (o in 0 until dim) q[o] = (h[o] / hs + 0.5f).toInt().coerceIn(-127, 127).toByte()
-        return Hidden(q, hs)
+        return Hidden(q, hs, h)
     }
 
-    /** Logit of word [id] given a computed [hidden] state. */
+    /** Logit of word [id] given a computed [hidden] state, personal delta included. */
     fun logit(id: Int, hidden: Hidden): Float {
         val row = id * dim
         var acc = 0
         for (j in 0 until dim) acc += emb[row + j] * hidden.q[j]
-        return acc * scale[id] * hidden.scale + bout[id]
+        var v = acc * scale[id] * hidden.scale + bout[id]
+        personal?.let { p ->
+            p.outputDelta(id)?.let { d ->
+                var s = 0f
+                for (j in 0 until dim) s += d[j] * hidden.f[j]
+                v += s
+            }
+            v += p.bias(id)
+        }
+        return v
     }
 
     /** Logits for a small candidate set (mid-word reranking). */
@@ -82,8 +108,14 @@ class NeuralLm private constructor(
     /** Best next-word ids over the whole vocabulary, specials excluded. */
     fun topNext(contextIds: List<Int>, k: Int): List<Int> {
         val h = hidden(contextIds)
-        nativeTopK?.invoke(h.q, h.scale, k)?.let { ids ->
-            return ids.filter { it < bos }
+        val p = personal
+        nativeTopK?.invoke(h.q, h.scale, if (p == null) k else maxOf(k * 4, 12))?.let { ids ->
+            val basePool = ids.filter { it < bos }
+            if (p == null) return basePool.take(k)
+            // Learned words can outrank the base list even when the frozen model ignores
+            // them; the native pass cannot see the deltas, so union and rescore here.
+            val pool = (basePool + p.learnedIds().filter { it < bos }).distinct()
+            return pool.sortedByDescending { logit(it, h) }.take(k)
         }
         // Kotlin fallback: one pass, keep the k best.
         val bestIds = IntArray(k) { -1 }
