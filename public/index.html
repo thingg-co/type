@@ -37,6 +37,7 @@
   .screen .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent);
                    vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
+  .screen .fix { color: var(--accent); font-weight: 600; }
   .kbd { display: flex; flex-direction: column; gap: 6px; }
   .krow { display: flex; gap: 5px; justify-content: center; }
   .key { flex: 1 1 0; background: var(--key); color: var(--keytext); border: 1px solid var(--line);
@@ -135,7 +136,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk</pre>
 </main>
 
 <script>
-// A looped demo of the real behavior: adaptive keys while typing, then word takeover.
+// A looped demo of the real behavior: adaptive keys, a typo getting fixed, word takeover.
 (function () {
   var rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
   var kbd = document.getElementById("kbd");
@@ -162,21 +163,25 @@ adb install app/build/outputs/apk/debug/app-debug.apk</pre>
   wordRow.style.display = "none";
   kbd.insertBefore(wordRow, kbd.firstChild);
 
-  // prefix -> letters that can continue a word (subset, enough for the animation)
+  // prefix -> letters that can continue a word ("" means nothing can: a typo)
   var next = {
     "t": "aehioruwy", "ty": "ip", "typ": "eio", "typi": "cfns", "typin": "g", "typing": "",
+    "s": "aehiklmnopqtuw", "sh": "aeioruy", "sho": "corpuw", "shou": "lt", "shoud": "", "shoudl": "",
+    "b": "aeiloruy", "be": "acdefghilnstw",
+    "e": "acdfglmnqsvxy", "ea": "cgrst", "eas": "eity", "easy": "",
     "r": "aeiou", "re": "abcdefgilmnopqstuvw", "res": "cieoptu", "rest": "aloru",
     "resta": "bktu", "restau": "r", "restaur": "a"
   };
-  var takeover = { "restaur": ["restaurant", "restaurateur"] };
 
+  function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function cap(w) { return w.charAt(0).toUpperCase() + w.slice(1); }
   function paint(prefix) {
     var possible = next[prefix];
     Object.keys(keyEls).forEach(function (c) {
       var el = keyEls[c];
       el.classList.remove("off", "hot");
       if (possible !== undefined && prefix !== "" && possible.indexOf(c) < 0) el.classList.add("off");
-      if (possible !== undefined && prefix !== "" && possible.length <= 3 && possible.indexOf(c) >= 0) el.classList.add("hot");
+      if (possible !== undefined && prefix !== "" && possible.length > 0 && possible.length <= 3 && possible.indexOf(c) >= 0) el.classList.add("hot");
     });
   }
   function showWords(words) {
@@ -192,48 +197,91 @@ adb install app/build/outputs/apk/debug/app-debug.apk</pre>
   }
   function hideWords() { wordRow.style.display = "none"; }
 
-  var script = [
-    { word: "typing", hint: "letters that can't continue a word fade away" },
-    { word: "restaur", hint: "down to two possibilities, the words become the keys", words: true, commit: "restaurant" }
-  ];
-  var si = 0, ci = 0, base = "";
+  var buffer = "";
+  function render(extra) { typedEl.textContent = buffer + (extra || ""); }
+  function hint(t) { hintEl.innerHTML = t ? "" : "&nbsp;"; if (t) hintEl.textContent = t; }
 
-  function step() {
-    var scene = script[si];
-    var target = scene.word;
-    if (ci < target.length) {
-      ci++;
-      var prefix = target.slice(0, ci);
-      typedEl.textContent = base + prefix;
-      paint(prefix);
-      hintEl.textContent = scene.hint;
-      if (scene.words && takeover[prefix]) {
-        showWords(takeover[prefix]);
-        setTimeout(function () {
-          typedEl.textContent = base + scene.commit + " ";
-          hintEl.textContent = "one tap commits the word";
-          hideWords();
-          paint("");
-          setTimeout(nextScene, 1700);
-        }, 1500);
-        return;
-      }
-      setTimeout(step, ci === 1 ? 650 : 330);
-    } else {
-      base = typedEl.textContent + " ";
-      setTimeout(nextScene, 1300);
+  var ops = [
+    { op: "type", word: "typing", capFirst: true, hint: "letters that can't continue a word fade away" },
+    { op: "sep" },
+    { op: "type", word: "shoudl", hint: "letters that can't continue a word fade away", hintTypo: "a typo slips in and every letter fades" },
+    { op: "fix", to: "should", hint: "the model fixes the finished word" },
+    { op: "type", word: "be", hint: "" },
+    { op: "sep" },
+    { op: "type", word: "easy", hint: "" },
+    { op: "pause", ms: 2000, hint: "typing should be easy" },
+    { op: "reset" },
+    { op: "type", word: "restau", hint: "six letters in, only two words remain" },
+    { op: "takeover", words: ["restaurant", "restaurateur"], commit: "restaurant",
+      hint: "so the words become the keys" },
+    { op: "pause", ms: 1600 },
+    { op: "reset" }
+  ];
+  var oi = 0;
+
+  function run() {
+    if (oi >= ops.length) { oi = 0; }
+    var o = ops[oi];
+    if (o.op === "type") {
+      var ci = 0;
+      (function typeChar() {
+        ci++;
+        var prefix = o.word.slice(0, ci);
+        var shown = o.capFirst && buffer === "" ? cap(prefix) : prefix;
+        render(shown);
+        paint(prefix);
+        hint(next[prefix] === "" && prefix.length > 4 ? (o.hintTypo || o.hint) : o.hint);
+        if (ci < o.word.length) {
+          setTimeout(typeChar, ci === 1 ? 520 : 300);
+        } else {
+          buffer += (o.capFirst && buffer === "" ? cap(o.word) : o.word);
+          oi++;
+          setTimeout(run, 520);
+        }
+      })();
+    } else if (o.op === "sep") {
+      buffer += " ";
+      render();
+      paint("");
+      oi++;
+      setTimeout(run, 380);
+    } else if (o.op === "fix") {
+      var m = buffer.match(/(\S+)$/);
+      var start = buffer.slice(0, buffer.length - m[1].length);
+      typedEl.innerHTML = esc(start) + '<span class="fix">' + esc(o.to) + "</span>&nbsp;";
+      buffer = start + o.to + " ";
+      paint("");
+      hint(o.hint);
+      oi++;
+      setTimeout(function () { render(); run(); }, 1400);
+    } else if (o.op === "pause") {
+      if (o.hint !== undefined) hint(o.hint);
+      oi++;
+      setTimeout(run, o.ms);
+    } else if (o.op === "takeover") {
+      showWords(o.words);
+      hint(o.hint);
+      setTimeout(function () {
+        buffer += o.commit + " ";
+        render();
+        hideWords();
+        paint("");
+        hint("one tap commits the word");
+        oi++;
+        setTimeout(run, 1500);
+      }, 1700);
+    } else if (o.op === "reset") {
+      buffer = "";
+      render();
+      paint("");
+      hideWords();
+      hint("");
+      oi++;
+      setTimeout(run, 700);
     }
   }
-  function nextScene() {
-    si++;
-    ci = 0;
-    if (si >= script.length) { si = 0; base = ""; typedEl.textContent = ""; }
-    paint("");
-    hideWords();
-    setTimeout(step, 700);
-  }
   paint("");
-  setTimeout(step, 900);
+  setTimeout(run, 900);
 })();
 </script>
 </body>
