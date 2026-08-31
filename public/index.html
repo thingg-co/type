@@ -263,6 +263,9 @@ adb install app/build/outputs/apk/debug/app-debug.apk</pre>
       showWords(o.words);
       hint(o.hint);
       setTimeout(function () {
+        // a word key replaces the typed prefix, it does not append to it
+        var typed = buffer.match(/(\S+)$/);
+        if (typed) buffer = buffer.slice(0, buffer.length - typed[1].length);
         buffer += o.commit + " ";
         render();
         hideWords();
