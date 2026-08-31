@@ -105,7 +105,9 @@ class SpellLlm(private val dictionaryProvider: () -> Dictionary?) {
             ?.toString(Charsets.UTF_8)
         lastLatencyMs = System.currentTimeMillis() - t0
         val result = CorrectionFilter.word(dictionaryProvider(), word, raw)
-        Log.d(TAG, "word '$word' -> raw='$raw' accepted=$result (${lastLatencyMs} ms)")
+        if (com.aosmith.type.BuildConfig.DEBUG) {
+            Log.d(TAG, "word '$word' -> raw='$raw' accepted=$result (${lastLatencyMs} ms)")
+        }
         synchronized(cache) { cache[key] = result }
         result
     }
@@ -122,7 +124,9 @@ class SpellLlm(private val dictionaryProvider: () -> Dictionary?) {
         val raw = LlamaNative.complete(trimmed + sentenceTail, maxTokens, null, true)?.toString(Charsets.UTF_8)
         lastLatencyMs = System.currentTimeMillis() - t0
         val result = CorrectionFilter.sentence(trimmed, raw)
-        Log.d(TAG, "sentence -> raw='$raw' accepted=$result (${lastLatencyMs} ms)")
+        if (com.aosmith.type.BuildConfig.DEBUG) {
+            Log.d(TAG, "sentence -> raw='$raw' accepted=$result (${lastLatencyMs} ms)")
+        }
         result
     }
 

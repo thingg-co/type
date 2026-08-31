@@ -67,6 +67,7 @@ class SuggestionStripView @JvmOverloads constructor(
 
     init {
         orientation = HORIZONTAL
+        filterTouchesWhenObscured = true
         setBackgroundColor(ContextCompat.getColor(context, R.color.kb_strip_background))
         minimumHeight = resources.getDimensionPixelSize(R.dimen.kb_strip_height)
         addView(fixButton)

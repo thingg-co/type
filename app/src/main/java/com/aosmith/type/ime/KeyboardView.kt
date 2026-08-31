@@ -133,6 +133,8 @@ class KeyboardView @JvmOverloads constructor(
     init {
         isClickable = true
         isFocusable = false
+        // Ignore touches arriving through an overlay drawn on top of the keys (tapjacking).
+        filterTouchesWhenObscured = true
         setBackgroundColor(colorBackground)
         rebuildKeys()
     }

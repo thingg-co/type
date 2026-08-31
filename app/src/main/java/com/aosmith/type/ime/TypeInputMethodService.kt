@@ -163,6 +163,16 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         val noSuggestions = inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0
         noLearning = info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         suggestionsAllowed = isText && !sensitive && !noSuggestions
+        // A screen recording captures the keyboard as its own window even when the editor
+        // blacks itself out; while a sensitive field is focused, keep this window out of
+        // captures too.
+        window?.window?.let { w ->
+            if (sensitive) {
+                w.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
         correctionAllowed = suggestionsAllowed && prefs.autocorrect
 
         keyboardView?.layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.SYMBOLS else Layer.LETTERS
@@ -282,7 +292,10 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         cancelLive()
         val dict = dictionary
         val current = word.toString()
-        keyboardView?.keyWeights = if (current.isEmpty() || dict == null) null else dict.nextLetters(current)
+        // No adaptive dimming in sensitive fields: the fading keys would broadcast the
+        // structure of a password to anyone watching the screen.
+        keyboardView?.keyWeights =
+            if (current.isEmpty() || dict == null || !suggestionsAllowed) null else dict.nextLetters(current)
         if (current.isEmpty()) suppressedTakeoverPrefix = null
         if (!suggestionsAllowed || dict == null) {
             keyboardView?.wordTakeover = null
@@ -293,7 +306,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             val beforeText = textBeforeWord(current) ?: ""
             val prevWords = Lexer.previousWords(beforeText, 5)
             val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, neural, prevWords, current) }
-            Log.d(TAG, "midWord '$current' prev=$prevWords neural=${neural != null} -> ${action.javaClass.simpleName}")
+            if (com.aosmith.type.BuildConfig.DEBUG) {
+                Log.d(TAG, "midWord '$current' prev=$prevWords neural=${neural != null} -> ${action.javaClass.simpleName}")
+            }
             if (word.toString() != current) return@launch
             if (action !is MidWordAction.WordKeys) keyboardView?.wordTakeover = null
             when (action) {
@@ -407,7 +422,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         pendingUndo = Undo(original, corrected, separator)
         undoArmed = typedSince.isEmpty()
         strip?.showUndo(original)
-        Log.i(TAG, "corrected '$original' -> '$corrected' (${llm.lastLatencyMs} ms)")
+        if (com.aosmith.type.BuildConfig.DEBUG) {
+            Log.i(TAG, "corrected '$original' -> '$corrected' (${llm.lastLatencyMs} ms)")
+        }
     }
 
     private fun revertCorrection() {
