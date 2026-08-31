@@ -184,7 +184,7 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 else -> {
                     row.progress.visibility = View.GONE
-                    row.status.text = spec.description
+                    row.status.text = spec.description + deviceFitNote(spec.id)
                     row.primary.text = getString(R.string.model_download)
                     row.primary.isEnabled = true
                     row.primary.setOnClickListener { startDownload(spec) }
@@ -227,6 +227,18 @@ class SettingsActivity : AppCompatActivity() {
         }
         downloads[spec.id] = job
         refreshModels()
+    }
+
+    /** A hardware-fit hint from the first-run benchmark; empty until it has run. */
+    private fun deviceFitNote(specId: String): String {
+        val ms = prefs.deviceMatvecMs
+        if (ms <= 0f) return ""
+        val best = when {
+            ms <= 1.2f -> "qwen2.5-1.5b-q8"
+            ms <= 2.6f -> "llama3.2-1b-q4"
+            else -> "smollm2-360m-q8"
+        }
+        return if (specId == best) "\n✓ Good fit for this phone" else ""
     }
 
     private fun queryName(uri: Uri): String? {

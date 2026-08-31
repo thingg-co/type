@@ -102,6 +102,13 @@ class TypingPolicyTest {
         assertEquals(listOf("can", "cat"), (action as MidWordAction.WordKeys).words)
     }
 
+    @Test fun `a typo'd context word still counts as context`() {
+        // "csn" is a fat-finger slip of "can"; the can->typist pair must still fire.
+        val action = TypingPolicy.midWord(dict, bigrams, null, listOf("csn"), "typi")
+        assertTrue("expected Predictions, got $action", action is MidWordAction.Predictions)
+        assertEquals("typist", (action as MidWordAction.Predictions).words.first())
+    }
+
     @Test fun `two-letter predictions appear only when context backs them`() {
         // "ty" spans too many families for word keys; without context it stays quiet.
         assertEquals(MidWordAction.None, TypingPolicy.midWord(dict, null, null, emptyList(), "ty"))

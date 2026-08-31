@@ -36,6 +36,16 @@ class Prefs(context: Context) {
         get() = sp.getString("model_id", null)
         set(v) = sp.edit().putString("model_id", v).apply()
 
+    /** Average ms for one full-vocabulary prediction pass on this device; -1 = unmeasured. */
+    var deviceMatvecMs: Float
+        get() = sp.getFloat("device_matvec_ms", -1f)
+        set(v) = sp.edit().putFloat("device_matvec_ms", v).apply()
+
+    /** Build fingerprint the benchmark ran on; re-run after OS updates or new hardware. */
+    var benchFingerprint: String?
+        get() = sp.getString("bench_fingerprint", null)
+        set(v) = sp.edit().putString("bench_fingerprint", v).apply()
+
     /** Inference threads; 0 means pick automatically. */
     var threads: Int
         get() = sp.getInt("threads", 0)

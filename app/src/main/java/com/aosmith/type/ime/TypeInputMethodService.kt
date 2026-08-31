@@ -621,6 +621,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
         if (!com.aosmith.type.llm.LlamaNative.nnLoad(f.absolutePath)) {
             Log.w(TAG, "native next-word matvec unavailable; using the Kotlin fallback")
+        } else if (prefs.benchFingerprint != android.os.Build.FINGERPRINT) {
+            // First run on this device or OS build: measure the one cost that scales with
+            // model size, so the app can right-size models to the hardware.
+            val ms = com.aosmith.type.llm.LlamaNative.nnBenchMs(16)
+            if (ms > 0f) {
+                prefs.deviceMatvecMs = ms
+                prefs.benchFingerprint = android.os.Build.FINGERPRINT
+                Log.i(TAG, "device benchmark: %.2f ms per prediction pass".format(ms))
+            }
         }
         return NeuralLm.load(this)
     }

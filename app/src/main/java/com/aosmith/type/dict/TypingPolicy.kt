@@ -112,7 +112,7 @@ object TypingPolicy {
         }
         val prev = previousWords.lastOrNull() ?: return words
         if (bigrams == null) return words
-        val prevId = dict.idOf(prev)
+        val prevId = resolveId(dict, prev)
         if (prevId < 0) return words
         return words.sortedByDescending { bigrams.score(prevId, dict.idOf(it)) }
     }
@@ -134,6 +134,18 @@ object TypingPolicy {
     /** Word ids for the network; null when there is no usable context at all. */
     private fun contextIds(dict: Dictionary, neural: NeuralLm, previousWords: List<String>): List<Int>? {
         if (previousWords.isEmpty()) return null
-        return previousWords.map { dict.idOf(it).let { id -> if (id >= 0) id else neural.unk } }
+        return previousWords.map { resolveId(dict, it).let { id -> if (id >= 0) id else neural.unk } }
+    }
+
+    /**
+     * Typo-tolerant id lookup for context words: a typo'd previous word must not poison
+     * the prediction context, so out-of-vocabulary words are read through the fat-finger
+     * corrector ("csn" counts as "can") before giving up.
+     */
+    private fun resolveId(dict: Dictionary, word: String): Int {
+        val direct = dict.idOf(word)
+        if (direct >= 0) return direct
+        val fixed = dict.suggest(word, 1).firstOrNull() ?: return -1
+        return dict.idOf(fixed)
     }
 }

@@ -56,16 +56,20 @@ def windows(stream, V):
 
 
 class NextWord(nn.Module):
-    def __init__(self, V, E):
+    def __init__(self, V, E, layers=1, hidden=256):
         super().__init__()
         self.emb = nn.Embedding(V, E)
-        self.w1 = nn.Linear(K * E, E)
+        dims = [K * E] + [hidden] * (layers - 1) + [E]
+        mods = []
+        for i in range(len(dims) - 1):
+            mods += [nn.Linear(dims[i], dims[i + 1]), nn.ReLU()]
+        self.trunk = nn.Sequential(*mods)
         self.bout = nn.Parameter(torch.zeros(V))
         nn.init.normal_(self.emb.weight, std=0.02)
 
     def forward(self, ctx):
         e = self.emb(ctx).flatten(1)
-        h = F.relu(self.w1(e))
+        h = self.trunk(e)
         return h @ self.emb.weight.T + self.bout
 
 
@@ -77,6 +81,8 @@ def main():
     steps = int(args[args.index("--steps") + 1]) if "--steps" in args else 30000
     E = int(args[args.index("--dim") + 1]) if "--dim" in args else 128
     B = int(args[args.index("--batch") + 1]) if "--batch" in args else 1024
+    layers = int(args[args.index("--layers") + 1]) if "--layers" in args else 1
+    hidden = int(args[args.index("--hidden") + 1]) if "--hidden" in args else 256
 
     n_words = sum(1 for _ in open("app/src/main/assets/en_words.txt", encoding="utf-8"))
     V = n_words + 2  # BOS, UNK
@@ -87,7 +93,8 @@ def main():
     va_ctx, va_tgt = windows(load_stream(f"{data_dir}/val.bin"), V)
     print(f"train windows {len(tr_tgt)}, val {len(va_tgt)}")
 
-    model = NextWord(V, E).to(dev)
+    model = NextWord(V, E, layers, hidden).to(dev)
+    print(f"layers={layers} hidden={hidden} params={sum(p.numel() for p in model.parameters())}")
     opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps, eta_min=3e-4)
 
@@ -124,9 +131,12 @@ def main():
     print(f"val ppl {math.exp(nll/total):.1f}  top1 {hits/total:.3f}  top3 {top3/total:.3f}")
 
     # ---- export ----------------------------------------------------------------------
+    if layers != 1:
+        print("multi-layer trunk: TNW1 export skipped (vetting run)")
+        return
     emb = model.emb.weight.detach().cpu().numpy().astype(np.float32)
-    w1 = model.w1.weight.detach().cpu().numpy().astype(np.float32)
-    b1 = model.w1.bias.detach().cpu().numpy().astype(np.float32)
+    w1 = model.trunk[0].weight.detach().cpu().numpy().astype(np.float32)
+    b1 = model.trunk[0].bias.detach().cpu().numpy().astype(np.float32)
     bout = model.bout.detach().cpu().numpy().astype(np.float32)
     scale = np.maximum(np.abs(emb).max(axis=1) / 127.0, 1e-8).astype(np.float32)
     q = np.clip(np.round(emb / scale[:, None]), -127, 127).astype(np.int8)

@@ -19,5 +19,6 @@ object LlamaNative {
     // Next-word network (asset copied to a file; see dict/NeuralLm.kt)
     external fun nnLoad(path: String): Boolean
     external fun nnTopK(hidden: ByteArray, hiddenScale: Float, k: Int): IntArray?
+    external fun nnBenchMs(iters: Int): Float
     external fun nnFree()
 }

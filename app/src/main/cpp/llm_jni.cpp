@@ -420,6 +420,38 @@ Java_com_aosmith_type_llm_LlamaNative_nnTopK(JNIEnv * env, jobject, jbyteArray j
     return out;
 }
 
+// Times the real hot path: full-vocabulary int8 matvecs over the loaded next-word
+// matrix. Returns average milliseconds per pass, or -1 when nothing is loaded.
+JNIEXPORT jfloat JNICALL
+Java_com_aosmith_type_llm_LlamaNative_nnBenchMs(JNIEnv *, jobject, jint iters) {
+    std::lock_guard<std::mutex> lock(g_nn_mutex);
+    if (g_nn_emb == nullptr || iters <= 0) return -1.0f;
+    const int e = g_nn_e;
+    std::vector<int8_t> h((size_t) e);
+    for (int j = 0; j < e; j++) h[j] = (int8_t) ((j * 37 % 255) - 127);
+    volatile int64_t sink = 0;
+    // warm-up
+    for (int w = 0; w < 3; w++) {
+        for (int v = 0; v < g_nn_v; v++) {
+            const int8_t * row = g_nn_emb + (size_t) v * e;
+            int32_t acc = 0;
+            for (int j = 0; j < e; j++) acc += (int32_t) row[j] * h[j];
+            sink += acc;
+        }
+    }
+    const int64_t t0 = llama_time_us();
+    for (int it = 0; it < iters; it++) {
+        for (int v = 0; v < g_nn_v; v++) {
+            const int8_t * row = g_nn_emb + (size_t) v * e;
+            int32_t acc = 0;
+            for (int j = 0; j < e; j++) acc += (int32_t) row[j] * h[j];
+            sink += acc;
+        }
+    }
+    (void) sink;
+    return (float) ((llama_time_us() - t0) / 1000.0 / iters);
+}
+
 JNIEXPORT void JNICALL
 Java_com_aosmith_type_llm_LlamaNative_nnFree(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(g_nn_mutex);
