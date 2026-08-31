@@ -378,10 +378,18 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         suppressedTakeoverPrefix = null
         if (finished.isNotEmpty()) recordTyped(finished, separator)
         if (pendingUndo == null || !undoArmed) strip?.clear()
-        if (!correctionAllowed || finished.length < 2 || finished.length > 24) return
+        if (!correctionAllowed || finished.isEmpty() || finished.length > 24) return
         if (!finished.all { it.isLetter() || it == '\'' }) return
+        if (finished.lowercase() in sessionAccepted) return
+        // Auto-apostrophe runs before the known-word gate: the word list knows "dont" as a
+        // word, which is precisely why the normal path can never fix it.
+        com.aosmith.type.dict.Contractions.fix(finished)?.let { fixed ->
+            if (fixed != finished) applyCorrection(finished, separator, fixed)
+            return
+        }
+        if (finished.length < 2) return
         val dict = dictionary ?: return
-        if (dict.isKnown(finished) || finished.lowercase() in sessionAccepted) return
+        if (dict.isKnown(finished)) return
         val before = textBeforeWord(finished, separator) ?: ""
         mainScope.launch {
             val corrected = if (llm.isReady) {
