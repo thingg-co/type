@@ -90,11 +90,12 @@
     <div class="card"><h3>Corrections you can trust</h3><p>Model output is checked against edit distance and a 56k-word dictionary before it may touch your text, and every change comes with an undo chip.</p></div>
     <div class="card"><h3>Adaptive keys</h3><p>Letters that cannot continue a word shrink and fade. Hit areas never change, so names and slang stay typable.</p></div>
     <div class="card"><h3>Words as keys</h3><p>When only a couple of words can finish what you typed, the keyboard offers them whole; an abc key brings the letters back.</p></div>
+    <div class="card"><h3>Knows what comes next</h3><p>A compact on-device model of word sequences suggests the next word after each space and ranks completions by the words before them.</p></div>
   </div>
 
   <h2>What it does</h2>
   <p>Type is a normal QWERTY keyboard with one difference: when you finish a word that isn't in the dictionary, a small language model looks at the last few words and decides what you meant. If it is confident, the word is replaced and an undo chip appears in the bar. Backspace right after a correction also puts the original back.</p>
-  <p>While a word is still being typed, the dictionary does the work instead: likely completions appear in the bar, letters that can't continue any word fade away, and when only a few words remain possible they take over the keyboard as buttons. The model is only consulted mid-word once what you've typed can no longer start any dictionary word. The ✨ button runs a whole-sentence pass.</p>
+  <p>While a word is still being typed, the dictionary and a sequence model do the work instead: the bar offers the most likely next word right after a space, completions are ranked by the words before them ("should ha" puts <i>have</i> up front), letters that can't continue any word fade away, and when only a few words remain possible they take over the keyboard as buttons. The correction model is only consulted mid-word once what you've typed can no longer start any dictionary word. The ✨ button runs a whole-sentence pass.</p>
 
   <h2>Which model</h2>
   <p>Chosen by replaying 45 typo-and-context cases and 8 sentences through each candidate with the exact prompts the keyboard uses (the harness is <code>tools/eval.py</code>). Typos fixed / correct-and-unusual words left alone / sentences fixed, with per-word latency on an M4; on a Pixel 9 the recommended model corrects a word in about a third of a second:</p>
