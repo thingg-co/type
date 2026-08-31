@@ -111,7 +111,7 @@ class Personalizer(private val base: NeuralLm) {
             for (j in 0 until e) dh[j] += g * row[j]
             val od = outputDelta.getOrPut(id) { FloatArray(e) }
             for (j in 0 until e) od[j] = clamp(od[j] - LR * (g * h[j] + DECAY * od[j]))
-            bias[id] = clamp((bias[id] ?: 0f) - LR * (g + DECAY * (bias[id] ?: 0f)))
+            bias[id] = ((bias[id] ?: 0f) - LR * (g + DECAY * (bias[id] ?: 0f))).coerceIn(-BIAS_CLAMP, BIAS_CLAMP)
         }
         // through ReLU (h==0 kills the grad) and the frozen trunk back to the context rows
         val w1 = base.trunkW()
@@ -199,5 +199,8 @@ class Personalizer(private val base: NeuralLm) {
         private const val LR = 0.02f
         private const val DECAY = 1e-3f
         private const val CLAMP = 0.6f
+
+        /** The context-free bias gets more room so often-typed words surface in any context. */
+        private const val BIAS_CLAMP = 1.5f
     }
 }
