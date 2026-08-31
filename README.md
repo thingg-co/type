@@ -13,10 +13,10 @@ Site: https://thingg-co.github.io/type/
   answer is close enough to what you typed (edit distance and dictionary checks), the word is
   replaced. An undo chip appears in the suggestion bar; backspace straight after a correction
   restores the original too.
-- While you type, the bar is context-aware: a lexer reads the previous tokens and a 7 MB
-  on-device neural network (four-word window, int8, trained on 50M words by tools/nn/)
+- While you type, the bar is context-aware: a lexer reads the previous tokens and a 13 MB
+  on-device neural network (four-word window, 192-d, int8, trained on 50M words by tools/nn/)
   suggests the next word after each space and ranks completions ("should ha" puts "have"
-  first). On held-out text it hits top-3 next-word 31.6% vs 19.9% for the bigram table it
+  first). On held-out text it hits top-3 next-word 32.5% vs 19.7% for the bigram table it
   replaced; the bigram table stays as an instant fallback. If what you typed cannot start
   any dictionary word, dictionary candidates appear immediately and the correction model is
   asked after a short pause.

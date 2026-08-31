@@ -125,11 +125,11 @@
 
   <div class="grid">
     <div class="card"><h3>On-device</h3><p>The model runs inside the keyboard process through llama.cpp. The only network use is downloading the model file you choose.</p></div>
-    <div class="card"><h3>Corrections you can trust</h3><p>Model output is checked against edit distance and a 56k-word dictionary before it may touch your text, and every change comes with an undo chip.</p></div>
+    <div class="card"><h3>Corrections you can trust</h3><p>Model output is checked against edit distance and a 64k-word dictionary before it may touch your text, and every change comes with an undo chip.</p></div>
     <div class="card"><h3>Adaptive keys</h3><p>Letters that cannot continue a word shrink and fade. Hit areas never change, so names and slang stay typable.</p></div>
     <div class="card"><h3>Words as keys</h3><p>When only a couple of words can finish what you typed, the keyboard offers them whole; an abc key brings the letters back.</p></div>
     <div class="card"><h3>Learns you, on your terms</h3><p>With learning on, your own phrasing trains a small personal layer that never leaves the phone. Only word ids are stored; a toggle controls it and a forget button erases it.</p></div>
-    <div class="card"><h3>Knows what comes next</h3><p>A 7&nbsp;MB neural network trained on 50 million words of text runs on the phone. It suggests the next word after each space and ranks completions by the four words before them.</p></div>
+    <div class="card"><h3>Knows what comes next</h3><p>A 13&nbsp;MB neural network trained on 50 million words of text runs on the phone. It suggests the next word after each space and ranks completions by the four words before them.</p></div>
   </div>
 
   <h2>What it does</h2>
@@ -153,13 +153,13 @@
   <p>The app offers SmolLM2 360M when you want the download small, Llama 3.2 1B as a middle ground, and Qwen2.5 1.5B as the recommended pick. "Kept" misses are mostly harmless: the keyboard rejects any model output that is far from what you typed, so a bad guess usually means no correction rather than a wrong one.</p>
 
   <h2>Prediction</h2>
-  <p>Suggestions while you type come from a separate, much smaller network: a 7&nbsp;MB feed-forward model (four-word window, tied 128-d embeddings, int8) trained on 50 million words of conversational and encyclopedic text, built and evaluated by <code>tools/nn/</code>. On 20,000 held-out cases it beats the word-pair table it replaced, and the pair table remains as an instant fallback:</p>
+  <p>Suggestions while you type come from a separate, much smaller network: a 13&nbsp;MB feed-forward model (four-word window, tied 192-d embeddings, int8) trained on 50 million words of conversational and encyclopedic text, built and evaluated by <code>tools/nn/</code>. On 20,000 held-out cases it beats the word-pair table it replaced, and the pair table remains as an instant fallback:</p>
   <div class="card" style="overflow-x:auto">
     <table>
       <tr><th></th><th>word pairs</th><th>network</th></tr>
-      <tr><td>next word, top-1</td><td>11.4%</td><td><b>18.9%</b></td></tr>
-      <tr><td>next word, top-3</td><td>19.9%</td><td><b>31.6%</b></td></tr>
-      <tr><td>completion after 2 letters, top-1</td><td>56.6%</td><td><b>76.4%</b></td></tr>
+      <tr><td>next word, top-1</td><td>11.2%</td><td><b>19.6%</b></td></tr>
+      <tr><td>next word, top-3</td><td>19.7%</td><td><b>32.5%</b></td></tr>
+      <tr><td>completion after 2 letters, top-1</td><td>57.2%</td><td><b>77.8%</b></td></tr>
     </table>
   </div>
 

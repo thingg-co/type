@@ -84,6 +84,7 @@ def main():
     layers = int(args[args.index("--layers") + 1]) if "--layers" in args else 1
     hidden = int(args[args.index("--hidden") + 1]) if "--hidden" in args else 256
     negs = int(args[args.index("--negs") + 1]) if "--negs" in args else 8192
+    full = "--full-softmax" in args
 
     n_words = sum(1 for _ in open("app/src/main/assets/en_words.txt", encoding="utf-8"))
     V = n_words + 2  # BOS, UNK
@@ -114,6 +115,15 @@ def main():
         idx = torch.randint(0, n, (B,))
         ctx = tr_ctx_t[idx].to(dev)
         tgt = tr_tgt_t[idx].to(dev)
+        if full:
+            loss = F.cross_entropy(model(ctx), tgt)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            opt.step()
+            sched.step()
+            if step % 1000 == 0 or step == 1:
+                print(f"step {step} loss {loss.item():.3f} ({(time.time()-t0):.0f}s)", flush=True)
+            continue
         # Sampled softmax: score the batch targets plus shared random negatives instead of
         # the whole vocabulary. Validation below still uses the full softmax, so reported
         # metrics stay comparable across trainer versions.

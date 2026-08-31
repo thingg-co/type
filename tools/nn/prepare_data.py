@@ -20,9 +20,15 @@ SPLIT = re.compile(r"[.!?\n]+")
 SEP = 0xFFFF
 
 out_dir = sys.argv[1]
-inputs = sys.argv[2:]
+args = sys.argv[2:]
+vocab_path = "app/src/main/assets/en_words.txt"
+if "--vocab" in args:
+    i = args.index("--vocab")
+    vocab_path = args[i + 1]
+    del args[i:i + 2]
+inputs = args
 
-vocab = {w.strip(): i for i, w in enumerate(open("app/src/main/assets/en_words.txt", encoding="utf-8"))}
+vocab = {w.strip(): i for i, w in enumerate(open(vocab_path, encoding="utf-8"))}
 V = len(vocab)
 UNK = V + 1
 print(f"vocab {V} words, BOS={V}, UNK={UNK}")
