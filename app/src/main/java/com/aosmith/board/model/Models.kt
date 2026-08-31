@@ -38,20 +38,20 @@ object ModelCatalog {
             description = "Quick on any recent phone and careful: it almost never changes a correct word.",
         ),
         ModelSpec(
-            id = "qwen3-0.6b-q8",
-            name = "Qwen3 0.6B (balanced)",
-            fileName = "qwen3-0.6b-q8_0.gguf",
-            url = "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
-            sizeBytes = 639_446_688L,
-            description = "Stronger on whole-sentence fixes, still fast.",
-        ),
-        ModelSpec(
             id = "llama3.2-1b-q4",
-            name = "Llama 3.2 1B (accurate)",
+            name = "Llama 3.2 1B (balanced)",
             fileName = "llama-3.2-1b-instruct-q4_k_m.gguf",
             url = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
             sizeBytes = 807_694_464L,
-            description = "Most accurate of the three; a bit slower per correction.",
+            description = "A step up in accuracy over SmolLM2, still reasonably quick.",
+        ),
+        ModelSpec(
+            id = "qwen2.5-1.5b-q8",
+            name = "Qwen2.5 1.5B (recommended)",
+            fileName = "qwen2.5-1.5b-instruct-q8_0.gguf",
+            url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q8_0.gguf",
+            sizeBytes = 1_894_532_128L,
+            description = "Fixed every typo and sentence in our tests. Big download, worth it on a recent phone.",
         ),
     )
 

@@ -58,11 +58,27 @@
     </div>
   </div>
 
+  <h2>Which model</h2>
+  <p>Chosen by replaying 45 typo-and-context cases and 8 sentences through each candidate with the exact prompts the keyboard uses (the harness is <code>tools/eval.py</code>). Typos fixed / correct-and-unusual words left alone / sentences fixed, with per-word latency on an M4 (a recent phone is roughly 3-5x slower):</p>
+  <div class="card" style="overflow-x:auto">
+    <table style="border-collapse:collapse;width:100%">
+      <tr style="text-align:left"><th style="padding:4px 10px 4px 0">Model</th><th style="padding:4px 10px">Fixed</th><th style="padding:4px 10px">Kept</th><th style="padding:4px 10px">Sentences</th><th style="padding:4px 10px">ms/word</th></tr>
+      <tr><td style="padding:4px 10px 4px 0">Qwen2.5 1.5B Q8</td><td style="padding:4px 10px"><b>35/35</b></td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px"><b>8/8</b></td><td style="padding:4px 10px">83</td></tr>
+      <tr><td style="padding:4px 10px 4px 0">Llama 3.2 1B Q4</td><td style="padding:4px 10px">30/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">6/8</td><td style="padding:4px 10px">55</td></tr>
+      <tr><td style="padding:4px 10px 4px 0">SmolLM2 360M Q8</td><td style="padding:4px 10px">31/35</td><td style="padding:4px 10px">8/10</td><td style="padding:4px 10px">5/8</td><td style="padding:4px 10px"><b>36</b></td></tr>
+      <tr><td style="padding:4px 10px 4px 0">Qwen3 1.7B Q8</td><td style="padding:4px 10px">32/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">5/8</td><td style="padding:4px 10px">95</td></tr>
+      <tr><td style="padding:4px 10px 4px 0">Gemma 3 1B Q8</td><td style="padding:4px 10px">32/35</td><td style="padding:4px 10px">6/10</td><td style="padding:4px 10px">1/8</td><td style="padding:4px 10px">84</td></tr>
+      <tr><td style="padding:4px 10px 4px 0">Qwen3 0.6B Q8</td><td style="padding:4px 10px">25/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">1/8</td><td style="padding:4px 10px">50</td></tr>
+      <tr><td style="padding:4px 10px 4px 0">Qwen2.5 0.5B Q8</td><td style="padding:4px 10px">24/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">1/8</td><td style="padding:4px 10px">40</td></tr>
+    </table>
+  </div>
+  <p>The app offers SmolLM2 360M when you want the download small, Llama 3.2 1B as a middle ground, and Qwen2.5 1.5B as the recommended pick. "Kept" misses are mostly harmless: the keyboard rejects any model output that is far from what you typed, so a bad guess usually means no correction rather than a wrong one.</p>
+
   <h2>Install</h2>
   <ol>
     <li>Download the APK and open it on the phone. Android will ask you to allow installs from this source.</li>
     <li>Open Board. Step 1 turns the keyboard on in the system settings; step 2 switches to it.</li>
-    <li>Pick a model. The 0.5B model is quick on any recent phone; the 1.5B one is more accurate and best on flagship hardware. Both are stored in the app's private storage.</li>
+    <li>Pick a model. SmolLM2 360M is quick on anything; Qwen2.5 1.5B is the accurate one and worth it on a recent phone. Models live in the app's private storage.</li>
   </ol>
   <p>Without a model the keyboard still works and falls back to dictionary suggestions.</p>
 

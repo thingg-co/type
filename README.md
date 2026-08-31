@@ -70,7 +70,8 @@ adb shell run-as com.aosmith.board sh -c 'mkdir -p files/models && cp /data/loca
 
 ## Models
 
-The settings screen offers Qwen2.5 0.5B and 1.5B Instruct (Q8_0 GGUF, Apache-2.0). Any
+The settings screen offers SmolLM2 360M (fast), Llama 3.2 1B (balanced) and Qwen2.5 1.5B
+(recommended; it fixed every typo and sentence in the eval, see tools/eval.py). Any
 instruct-tuned GGUF that llama.cpp can run will load through the import button; the chat
 template is read from the file.
 
