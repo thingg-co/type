@@ -1,26 +1,50 @@
 package com.aosmith.board.dict
 
-import android.content.Context
-import android.util.Log
 import java.io.BufferedReader
+import java.io.InputStream
 import java.io.InputStreamReader
 
 /**
- * Frequency-ordered English word list with a trie for prefix queries.
+ * Frequency-ordered word list with a trie for prefix queries.
  *
- * Used for three things: deciding whether a finished word needs the model at all, cheap
- * edit-distance suggestions while the model thinks, and the adaptive-key weights.
+ * Pure JVM on purpose: everything here is exercised by plain unit tests. Android only
+ * appears in the [load] factory.
+ *
+ * Used for: deciding whether a finished word needs the model at all, instant suggestions
+ * and completions while the model thinks, and the adaptive-key weights.
  */
-class Dictionary private constructor(
-    private val rank: HashMap<String, Int>,
-    private val root: Node,
-) {
+class Dictionary(words: Sequence<String>) {
+
     class Node {
         val children = HashMap<Char, Node>(4)
         var terminal = false
 
         /** Sum of frequency weights of every word under this node; drives adaptive keys. */
         var weight = 0f
+    }
+
+    private val rank = HashMap<String, Int>(80_000)
+    private val root = Node()
+    private val byLength = HashMap<Int, ArrayList<String>>()
+
+    init {
+        var i = 0
+        for (line in words) {
+            val w = line.trim()
+            if (w.isEmpty() || rank.containsKey(w)) continue
+            rank[w] = i
+            byLength.getOrPut(w.length) { ArrayList() } += w
+            // Zipf-like weight: rank 0 counts ~1.0, rank 50k counts ~0.02.
+            val weight = 1f / (1f + i / 1000f)
+            var node = root
+            node.weight += weight
+            for (c in w) {
+                node = node.children.getOrPut(c) { Node() }
+                node.weight += weight
+            }
+            node.terminal = true
+            i++
+        }
     }
 
     val size: Int get() = rank.size
@@ -44,16 +68,14 @@ class Dictionary private constructor(
     }
 
     /**
-     * All dictionary words starting with [prefix], best (most frequent) first, but only when
-     * there are at most [limit] of them; otherwise empty. Powers the word-key morphing: with
-     * few possibilities left, the keyboard can offer whole words instead of letters.
+     * All dictionary words starting with [prefix], best first, but only when they collapse to
+     * at most [limit] word families; otherwise empty. A family is a stem plus its plural and
+     * possessive variants, represented by its most frequent member. Powers word-key morphing.
      */
     fun completions(prefix: String, limit: Int): List<String> {
         if (prefix.isEmpty()) return emptyList()
         var node = root
         for (c in prefix.lowercase()) node = node.children[c] ?: return emptyList()
-        // Collect a few more raw words than the limit: plural and possessive variants are
-        // folded into one family below, so raw count alone would trigger far too rarely.
         val rawCap = limit * 3 + 3
         val found = ArrayList<String>(rawCap + 1)
         val sb = StringBuilder(prefix.lowercase())
@@ -71,15 +93,37 @@ class Dictionary private constructor(
             return true
         }
         if (!walk(node)) return emptyList()
-        // One family per stem: "restaurant", "restaurants", "restaurant's" count once, and the
-        // most frequent member represents it.
-        fun stem(w: String) = w.removeSuffix("'s").removeSuffix("s'").let { if (it.length > 3) it.removeSuffix("s") else it }
         val families = found.groupBy(::stem)
         if (families.size > limit) return emptyList()
         return families.values
             .map { members -> members.minBy { rank[it] ?: Int.MAX_VALUE } }
             .sortedBy { rank[it] ?: Int.MAX_VALUE }
             .map { matchCase(prefix, it) }
+    }
+
+    /**
+     * The most frequent words starting with [prefix], regardless of how many there are.
+     * Mid-word prediction: "typi" gives "typing", "typical", ...
+     */
+    fun predictions(prefix: String, max: Int): List<String> {
+        if (prefix.isEmpty()) return emptyList()
+        var node = root
+        for (c in prefix.lowercase()) node = node.children[c] ?: return emptyList()
+        val found = ArrayList<String>(32)
+        val sb = StringBuilder(prefix.lowercase())
+        // Heaviest branches first, stop early: frequent words surface without a full walk.
+        fun walk(n: Node) {
+            if (found.size >= 25) return
+            if (n.terminal) found += sb.toString()
+            for ((c, child) in n.children.entries.sortedByDescending { it.value.weight }) {
+                if (found.size >= 25) return
+                sb.append(c)
+                walk(child)
+                sb.setLength(sb.length - 1)
+            }
+        }
+        walk(node)
+        return found.sortedBy { rank[it] ?: Int.MAX_VALUE }.take(max).map { matchCase(prefix, it) }
     }
 
     /** Letters that can follow [prefix] in some dictionary word, weighted by frequency (sums to 1). */
@@ -94,19 +138,18 @@ class Dictionary private constructor(
     /**
      * Up to [max] known words within a small edit distance of [word], best first.
      *
-     * Scans the words whose length is within two of the input and computes a bounded
-     * Damerau-Levenshtein distance for each. On a 52k-word list that is a few thousand
-     * comparisons, cheap enough for every keystroke on a background thread, and unlike
-     * generate-and-test it allocates nothing per candidate.
+     * Scans the words whose length is within two of the input with a bounded
+     * Damerau-Levenshtein distance: a few thousand cheap comparisons, no per-candidate
+     * allocation.
      */
     fun suggest(word: String, max: Int = 3): List<String> {
         val w = word.lowercase()
         if (w.isEmpty()) return emptyList()
         val maxDistance = if (w.length <= 4) 1 else 2
         val scored = ArrayList<Pair<String, Int>>()
-        val buf = DistanceBuffers(w.length + 1)
+        val buf = DistanceBuffers(w.length + 1 + maxDistance)
         for (len in (w.length - maxDistance)..(w.length + maxDistance)) {
-            val bucket = byLength.get(len) ?: continue
+            val bucket = byLength[len] ?: continue
             for (candidate in bucket) {
                 val d = boundedDistance(w, candidate, maxDistance, buf)
                 if (d > maxDistance) continue
@@ -118,15 +161,6 @@ class Dictionary private constructor(
         }
         scored.sortBy { it.second }
         return scored.take(max).map { matchCase(word, it.first) }
-    }
-
-    private val byLength: android.util.SparseArray<ArrayList<String>> by lazy {
-        val map = android.util.SparseArray<ArrayList<String>>()
-        for (w in rank.keys) {
-            val list = map.get(w.length) ?: ArrayList<String>().also { map.put(w.length, it) }
-            list += w
-        }
-        map
     }
 
     private class DistanceBuffers(n: Int) {
@@ -166,34 +200,20 @@ class Dictionary private constructor(
     }
 
     companion object {
-        private const val TAG = "Dictionary"
-        private const val ALPHABET = "abcdefghijklmnopqrstuvwxyz'"
 
-        fun load(context: Context, asset: String = "en_words.txt"): Dictionary {
+        /** "restaurant", "restaurants" and "restaurant's" share one stem. */
+        fun stem(w: String): String =
+            w.removeSuffix("'s").removeSuffix("s'").let { if (it.length > 3) it.removeSuffix("s") else it }
+
+        fun load(context: android.content.Context, asset: String = "en_words.txt"): Dictionary {
             val t0 = System.currentTimeMillis()
-            val rank = HashMap<String, Int>(80_000)
-            val root = Node()
-            BufferedReader(InputStreamReader(context.assets.open(asset), Charsets.UTF_8)).useLines { lines ->
-                var i = 0
-                for (line in lines) {
-                    val w = line.trim()
-                    if (w.isEmpty()) continue
-                    rank[w] = i
-                    // Zipf-like weight: rank 0 counts ~1.0, rank 50k counts ~0.02.
-                    val weight = 1f / (1f + i / 1000f)
-                    var node = root
-                    node.weight += weight
-                    for (c in w) {
-                        node = node.children.getOrPut(c) { Node() }
-                        node.weight += weight
-                    }
-                    node.terminal = true
-                    i++
-                }
-            }
-            Log.i(TAG, "loaded ${rank.size} words in ${System.currentTimeMillis() - t0} ms")
-            return Dictionary(rank, root)
+            val dict = fromStream(context.assets.open(asset))
+            android.util.Log.i("Dictionary", "loaded ${dict.size} words in ${System.currentTimeMillis() - t0} ms")
+            return dict
         }
+
+        fun fromStream(input: InputStream): Dictionary =
+            BufferedReader(InputStreamReader(input, Charsets.UTF_8)).useLines { Dictionary(it) }
 
         /** Damerau-Levenshtein distance (optimal string alignment). */
         fun editDistance(a: String, b: String): Int {
@@ -218,7 +238,7 @@ class Dictionary private constructor(
         /** Applies the capitalisation pattern of [original] to [replacement]. */
         fun matchCase(original: String, replacement: String): String = when {
             original.length > 1 && original.all { !it.isLetter() || it.isUpperCase() } -> replacement.uppercase()
-            original.first().isUpperCase() -> replacement.replaceFirstChar { it.uppercaseChar() }
+            original.firstOrNull()?.isUpperCase() == true -> replacement.replaceFirstChar { it.uppercaseChar() }
             else -> replacement.lowercase()
         }
     }

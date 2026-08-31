@@ -30,6 +30,8 @@ class KeyboardView @JvmOverloads constructor(
         fun onBackspace()
         fun onEnter()
         fun onSpace()
+        fun onWordKey(word: String)
+        fun onEscapeWordMode()
     }
 
     enum class Shift { OFF, ON, LOCKED }
@@ -69,6 +71,20 @@ class KeyboardView @JvmOverloads constructor(
             invalidate()
         }
     var hapticsEnabled: Boolean = true
+
+    /**
+     * Word takeover: when set, the letter rows are replaced by these words as huge buttons,
+     * with backspace, space, enter and an "abc" escape key keeping the flow available. The
+     * view keeps its exact height so nothing on screen jumps.
+     */
+    var wordTakeover: List<String>? = null
+        set(value) {
+            if (field != value) {
+                field = value
+                rebuildKeys()
+                invalidate()
+            }
+        }
 
     private class KeyBox(val spec: KeySpec, val rect: RectF, val row: Int)
 
@@ -133,9 +149,41 @@ class KeyboardView @JvmOverloads constructor(
         rebuildKeys()
     }
 
+    private fun takeoverLayout(words: List<String>): LayoutSpec {
+        val escape = KeySpec("abc", KeyAction.EscapeWords, 1.5f, special = true)
+        val backspace = KeySpec("⌫", KeyAction.Backspace, 1.5f, special = true)
+        val enter = KeySpec("↵", KeyAction.Enter, 1.5f, special = true, accent = true)
+        val row3 = if (words.size > 2) {
+            RowSpec(listOf(KeySpec(words[2], KeyAction.Word(words[2]), 8.5f), backspace))
+        } else {
+            RowSpec(listOf(backspace), leadingPad = 8.5f)
+        }
+        return LayoutSpec(
+            listOf(
+                RowSpec(listOf(KeySpec(words[0], KeyAction.Word(words[0]), 10f))),
+                if (words.size > 1) {
+                    RowSpec(listOf(KeySpec(words[1], KeyAction.Word(words[1]), 10f)))
+                } else {
+                    RowSpec(emptyList())
+                },
+                row3,
+                RowSpec(
+                    listOf(
+                        escape,
+                        KeySpec(",", KeyAction.Text(","), 1f, special = true),
+                        KeySpec("", KeyAction.Space, 5f),
+                        KeySpec(".", KeyAction.Text("."), 1f, special = true),
+                        enter,
+                    ),
+                ),
+            ),
+        )
+    }
+
     private fun rebuildKeys() {
         keys.clear()
-        val spec = KeyboardLayouts.forLayer(layer)
+        val takeover = wordTakeover
+        val spec = if (!takeover.isNullOrEmpty()) takeoverLayout(takeover) else KeyboardLayouts.forLayer(layer)
         val usable = width - 2 * sidePadding
         if (usable <= 0) return
         val unit = usable / 10f
@@ -199,8 +247,13 @@ class KeyboardView @JvmOverloads constructor(
                     else -> colorText
                 }
                 textPaint.alpha = alpha
-                textPaint.textSize = (if (spec.isLetter || label.length == 1) labelSize else labelSizeSmall) * scale
-                textPaint.isFakeBoldText = spec.action == KeyAction.Shift && shift == Shift.LOCKED
+                val isWordKey = spec.action is KeyAction.Word
+                textPaint.textSize = when {
+                    isWordKey -> labelSize * 0.95f
+                    spec.isLetter || label.length == 1 -> labelSize * scale
+                    else -> labelSizeSmall * scale
+                }
+                textPaint.isFakeBoldText = isWordKey || (spec.action == KeyAction.Shift && shift == Shift.LOCKED)
                 val baseline = cy - (textPaint.descent() + textPaint.ascent()) / 2f
                 canvas.drawText(label, cx, baseline, textPaint)
                 if (spec.action == KeyAction.Shift && shift == Shift.LOCKED) {
@@ -333,6 +386,8 @@ class KeyboardView @JvmOverloads constructor(
                 if (layer != Layer.LETTERS) shift = Shift.OFF
                 requestLayout()
             }
+            is KeyAction.Word -> listener?.onWordKey(action.word)
+            KeyAction.EscapeWords -> listener?.onEscapeWordMode()
         }
     }
 

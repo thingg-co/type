@@ -7,70 +7,106 @@
 <meta name="description" content="Board is an Android keyboard that fixes typos with a small language model running on the phone.">
 <style>
   :root {
-    --bg: #f6f7f9; --fg: #1b1b1f; --muted: #5b6270; --accent: #1e6fd9; --card: #ffffff; --line: #dde1e7;
+    --bg: #f4f6f9; --fg: #171a20; --muted: #5b6270; --accent: #1e6fd9; --accent2: #7c4dff;
+    --card: #ffffff; --line: #dfe3ea; --key: #ffffff; --keytext: #202430; --dim: #aeb6c2;
     color-scheme: light dark;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #16181c; --fg: #f3f4f6; --muted: #a2a8b3; --accent: #7cb2ff; --card: #1f2226; --line: #2e3238; }
+    :root { --bg: #14161a; --fg: #f3f4f6; --muted: #9aa1ad; --accent: #7cb2ff; --accent2: #b39dff;
+            --card: #1e2126; --line: #2c3037; --key: #2c313a; --keytext: #e8eaef; --dim: #4a505b; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  main { max-width: 720px; margin: 0 auto; padding: 48px 20px 80px; }
-  h1 { font-size: 2.4rem; margin: 0 0 4px; letter-spacing: -0.02em; }
-  .tag { color: var(--muted); margin: 0 0 32px; font-size: 1.1rem; }
-  h2 { font-size: 1.25rem; margin: 40px 0 10px; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 17px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; padding: 0 20px 90px; }
+
+  header { padding: 72px 0 8px; text-align: center; }
+  h1 { font-size: 3.4rem; margin: 0; letter-spacing: -0.03em;
+       background: linear-gradient(100deg, var(--accent), var(--accent2));
+       -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tag { color: var(--muted); margin: 10px auto 26px; font-size: 1.15rem; max-width: 34em; }
+  .cta { display: inline-block; background: var(--accent); color: #fff; text-decoration: none;
+         padding: 13px 22px; border-radius: 12px; font-weight: 600; margin: 4px 6px;
+         box-shadow: 0 2px 10px rgba(30,111,217,.25); }
+  .cta.secondary { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); box-shadow: none; }
+
+  /* live demo */
+  .demo { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+          padding: 18px 16px 14px; margin: 34px 0 8px; box-shadow: 0 8px 30px rgba(0,0,0,.06); }
+  .screen { font-size: 1.05rem; min-height: 1.6em; padding: 2px 6px 10px; border-bottom: 2px solid var(--line); margin-bottom: 10px; }
+  .screen .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--accent);
+                   vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .kbd { display: flex; flex-direction: column; gap: 6px; }
+  .krow { display: flex; gap: 5px; justify-content: center; }
+  .key { flex: 1 1 0; background: var(--key); color: var(--keytext); border: 1px solid var(--line);
+         border-radius: 8px; text-align: center; padding: 11px 0; font-size: .98em; user-select: none;
+         transition: transform .22s, opacity .22s, background .3s; }
+  .key.off { opacity: .32; transform: scale(.72); }
+  .key.hot { font-weight: 700; color: var(--accent); }
+  .key.wordkey { font-weight: 700; background: linear-gradient(100deg, var(--accent), var(--accent2));
+                 color: #fff; border: none; }
+  .demo .hint { color: var(--muted); font-size: .85em; text-align: center; margin: 10px 0 0; }
+
+  h2 { font-size: 1.3rem; margin: 46px 0 10px; letter-spacing: -0.01em; }
   p { margin: 0 0 14px; }
   a { color: var(--accent); }
-  .cta { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; margin: 6px 10px 6px 0; }
-  .cta.secondary { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 12px 0; }
+  .grid .card { margin: 0; }
+  .card h3 { margin: 0 0 6px; font-size: 1.02rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .95rem; }
   ol { padding-left: 22px; }
   li { margin-bottom: 8px; }
-  code { background: var(--card); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; font-size: 0.92em; }
-  pre { background: var(--card); border: 1px solid var(--line); padding: 12px 14px; border-radius: 10px; overflow-x: auto; font-size: 0.9em; }
-  .kbd { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin: 14px 0 0; }
-  .kbd span { background: var(--card); border: 1px solid var(--line); border-radius: 6px; text-align: center; padding: 8px 0; font-size: 0.95em; transition: transform .15s, opacity .15s; }
-  .kbd span.off { opacity: .35; transform: scale(.78); }
-  .kbd span.hot { font-weight: 700; color: var(--accent); }
-  footer { margin-top: 56px; color: var(--muted); font-size: 0.9em; }
+  code { background: var(--card); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+  pre { background: var(--card); border: 1px solid var(--line); padding: 12px 14px; border-radius: 10px; overflow-x: auto; font-size: .9em; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 5px 10px; text-align: left; }
+  th { border-bottom: 1.5px solid var(--line); }
+  tr + tr td { border-top: 1px solid var(--line); }
+  footer { margin-top: 60px; color: var(--muted); font-size: .9em; text-align: center; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Board</h1>
-  <p class="tag">An Android keyboard that fixes typos with a language model running on the phone.</p>
+  <header>
+    <h1>Board</h1>
+    <p class="tag">An Android keyboard that fixes typos with a language model running on the phone. Nothing you type leaves the device.</p>
+    <p>
+      <a class="cta" href="https://github.com/thingg-co/type/releases/latest">Download APK</a>
+      <a class="cta secondary" href="https://github.com/thingg-co/type">Source on GitHub</a>
+    </p>
+  </header>
 
-  <p>
-    <a class="cta" href="https://github.com/thingg-co/type/releases/latest">Download APK</a>
-    <a class="cta secondary" href="https://github.com/thingg-co/type">Source on GitHub</a>
-  </p>
-
-  <h2>What it does</h2>
-  <p>Board is a normal QWERTY keyboard with one difference: when you finish a word that isn't in the dictionary, a small language model looks at the last few words and the word you typed and decides what you meant. If it is confident, the word is replaced and an undo chip appears in the suggestion bar. Backspace right after a correction also puts the original back.</p>
-  <p>The model runs inside the keyboard process through <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>. There is no network permission used for typing; the only download is the model file itself, which you pick and fetch from the settings screen.</p>
-
-  <h2>Adaptive keys</h2>
-  <p>As you type, the keyboard knows which letters can still continue a real word. Letters that can't are shrunk and dimmed; likely ones stay full size. The touch targets never change, so you can still type names and slang, it just gets visually quieter.</p>
-  <p>When the possibilities narrow to a handful of word families, the bar above the keys turns into whole-word keys: type <code>restau</code> and you get <b>restaurant</b> and <b>restaurateur</b> as buttons, one tap to finish the word.</p>
-  <div class="card">
-    <div>After typing <code>th</code>:</div>
-    <div class="kbd">
-      <span class="off">q</span><span class="off">w</span><span class="hot">e</span><span>r</span><span class="off">t</span><span>y</span><span>u</span><span>i</span><span>o</span><span class="off">p</span>
-    </div>
+  <div class="demo" aria-label="animated demo of the keyboard">
+    <div class="screen"><span id="typed"></span><span class="caret"></span></div>
+    <div class="kbd" id="kbd"></div>
+    <p class="hint" id="hint">&nbsp;</p>
   </div>
 
+  <div class="grid">
+    <div class="card"><h3>On-device</h3><p>The model runs inside the keyboard process through llama.cpp. The only network use is downloading the model file you choose.</p></div>
+    <div class="card"><h3>Corrections you can trust</h3><p>Model output is checked against edit distance and a 56k-word dictionary before it may touch your text, and every change comes with an undo chip.</p></div>
+    <div class="card"><h3>Adaptive keys</h3><p>Letters that cannot continue a word shrink and fade. Hit areas never change, so names and slang stay typable.</p></div>
+    <div class="card"><h3>Words as keys</h3><p>When only a couple of words can finish what you typed, the keyboard offers them whole; an abc key brings the letters back.</p></div>
+  </div>
+
+  <h2>What it does</h2>
+  <p>Board is a normal QWERTY keyboard with one difference: when you finish a word that isn't in the dictionary, a small language model looks at the last few words and decides what you meant. If it is confident, the word is replaced and an undo chip appears in the bar. Backspace right after a correction also puts the original back.</p>
+  <p>While a word is still being typed, the dictionary does the work instead: likely completions appear in the bar, letters that can't continue any word fade away, and when only a few words remain possible they take over the keyboard as buttons. The model is only consulted mid-word once what you've typed can no longer start any dictionary word. The ✨ button runs a whole-sentence pass.</p>
+
   <h2>Which model</h2>
-  <p>Chosen by replaying 45 typo-and-context cases and 8 sentences through each candidate with the exact prompts the keyboard uses (the harness is <code>tools/eval.py</code>). Typos fixed / correct-and-unusual words left alone / sentences fixed, with per-word latency on an M4 (a recent phone is roughly 3-5x slower):</p>
+  <p>Chosen by replaying 45 typo-and-context cases and 8 sentences through each candidate with the exact prompts the keyboard uses (the harness is <code>tools/eval.py</code>). Typos fixed / correct-and-unusual words left alone / sentences fixed, with per-word latency on an M4; on a Pixel 9 the recommended model corrects a word in about a third of a second:</p>
   <div class="card" style="overflow-x:auto">
-    <table style="border-collapse:collapse;width:100%">
-      <tr style="text-align:left"><th style="padding:4px 10px 4px 0">Model</th><th style="padding:4px 10px">Fixed</th><th style="padding:4px 10px">Kept</th><th style="padding:4px 10px">Sentences</th><th style="padding:4px 10px">ms/word</th></tr>
-      <tr><td style="padding:4px 10px 4px 0">Qwen2.5 1.5B Q8</td><td style="padding:4px 10px"><b>35/35</b></td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px"><b>8/8</b></td><td style="padding:4px 10px">83</td></tr>
-      <tr><td style="padding:4px 10px 4px 0">Llama 3.2 1B Q4</td><td style="padding:4px 10px">30/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">6/8</td><td style="padding:4px 10px">55</td></tr>
-      <tr><td style="padding:4px 10px 4px 0">SmolLM2 360M Q8</td><td style="padding:4px 10px">31/35</td><td style="padding:4px 10px">8/10</td><td style="padding:4px 10px">5/8</td><td style="padding:4px 10px"><b>36</b></td></tr>
-      <tr><td style="padding:4px 10px 4px 0">Qwen3 1.7B Q8</td><td style="padding:4px 10px">32/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">5/8</td><td style="padding:4px 10px">95</td></tr>
-      <tr><td style="padding:4px 10px 4px 0">Gemma 3 1B Q8</td><td style="padding:4px 10px">32/35</td><td style="padding:4px 10px">6/10</td><td style="padding:4px 10px">1/8</td><td style="padding:4px 10px">84</td></tr>
-      <tr><td style="padding:4px 10px 4px 0">Qwen3 0.6B Q8</td><td style="padding:4px 10px">25/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">1/8</td><td style="padding:4px 10px">50</td></tr>
-      <tr><td style="padding:4px 10px 4px 0">Qwen2.5 0.5B Q8</td><td style="padding:4px 10px">24/35</td><td style="padding:4px 10px">9/10</td><td style="padding:4px 10px">1/8</td><td style="padding:4px 10px">40</td></tr>
+    <table>
+      <tr><th>Model</th><th>Fixed</th><th>Kept</th><th>Sentences</th><th>ms/word</th></tr>
+      <tr><td>Qwen2.5 1.5B Q8</td><td><b>35/35</b></td><td>9/10</td><td><b>8/8</b></td><td>83</td></tr>
+      <tr><td>Llama 3.2 1B Q4</td><td>30/35</td><td>9/10</td><td>6/8</td><td>55</td></tr>
+      <tr><td>SmolLM2 360M Q8</td><td>31/35</td><td>8/10</td><td>5/8</td><td><b>36</b></td></tr>
+      <tr><td>Qwen3 1.7B Q8</td><td>32/35</td><td>9/10</td><td>5/8</td><td>95</td></tr>
+      <tr><td>Gemma 3 1B Q8</td><td>32/35</td><td>6/10</td><td>1/8</td><td>84</td></tr>
+      <tr><td>Qwen3 0.6B Q8</td><td>25/35</td><td>9/10</td><td>1/8</td><td>50</td></tr>
+      <tr><td>Qwen2.5 0.5B Q8</td><td>24/35</td><td>9/10</td><td>1/8</td><td>40</td></tr>
     </table>
   </div>
   <p>The app offers SmolLM2 360M when you want the download small, Llama 3.2 1B as a middle ground, and Qwen2.5 1.5B as the recommended pick. "Kept" misses are mostly harmless: the keyboard rejects any model output that is far from what you typed, so a bad guess usually means no correction rather than a wrong one.</p>
@@ -91,11 +127,114 @@
 cd type
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk</pre>
-  <p>Needs Android Studio's SDK with NDK 28 and CMake 3.31. English only for now; the layout and dictionary are data files, so other languages can be added without touching the input logic.</p>
+  <p>Needs Android Studio's SDK with NDK 28 and CMake 3.31. English only for now; the layout and dictionary are data files, so other languages can be added without touching the input logic. <code>./gradlew test</code> runs the dictionary, policy and filter suites; <code>tools/eval.py</code> replays the model prompts.</p>
 
   <footer>
     Free for personal and noncommercial use under the <a href="https://polyformproject.org/licenses/noncommercial/1.0.0">PolyForm Noncommercial License</a>. Commercial use needs a separate license.
   </footer>
 </main>
+
+<script>
+// A looped demo of the real behavior: adaptive keys while typing, then word takeover.
+(function () {
+  var rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+  var kbd = document.getElementById("kbd");
+  var typedEl = document.getElementById("typed");
+  var hintEl = document.getElementById("hint");
+  var keyEls = {};
+
+  rows.forEach(function (r) {
+    var row = document.createElement("div");
+    row.className = "krow";
+    if (r.length === 9) { row.style.padding = "0 5%"; }
+    if (r.length === 7) { row.style.padding = "0 15%"; }
+    r.split("").forEach(function (c) {
+      var k = document.createElement("div");
+      k.className = "key";
+      k.textContent = c;
+      row.appendChild(k);
+      keyEls[c] = k;
+    });
+    kbd.appendChild(row);
+  });
+  var wordRow = document.createElement("div");
+  wordRow.className = "krow";
+  wordRow.style.display = "none";
+  kbd.insertBefore(wordRow, kbd.firstChild);
+
+  // prefix -> letters that can continue a word (subset, enough for the animation)
+  var next = {
+    "t": "aehioruwy", "ty": "ip", "typ": "eio", "typi": "cfns", "typin": "g", "typing": "",
+    "r": "aeiou", "re": "abcdefgilmnopqstuvw", "res": "cieoptu", "rest": "aloru",
+    "resta": "bktu", "restau": "r", "restaur": "a"
+  };
+  var takeover = { "restaur": ["restaurant", "restaurateur"] };
+
+  function paint(prefix) {
+    var possible = next[prefix];
+    Object.keys(keyEls).forEach(function (c) {
+      var el = keyEls[c];
+      el.classList.remove("off", "hot");
+      if (possible !== undefined && prefix !== "" && possible.indexOf(c) < 0) el.classList.add("off");
+      if (possible !== undefined && prefix !== "" && possible.length <= 3 && possible.indexOf(c) >= 0) el.classList.add("hot");
+    });
+  }
+  function showWords(words) {
+    wordRow.innerHTML = "";
+    words.forEach(function (w) {
+      var k = document.createElement("div");
+      k.className = "key wordkey";
+      k.textContent = w;
+      wordRow.appendChild(k);
+    });
+    wordRow.style.display = "flex";
+    rows.forEach(function (r) { r.split("").forEach(function (c) { keyEls[c].classList.add("off"); }); });
+  }
+  function hideWords() { wordRow.style.display = "none"; }
+
+  var script = [
+    { word: "typing", hint: "letters that can't continue a word fade away" },
+    { word: "restaur", hint: "down to two possibilities, the words become the keys", words: true, commit: "restaurant" }
+  ];
+  var si = 0, ci = 0, base = "";
+
+  function step() {
+    var scene = script[si];
+    var target = scene.word;
+    if (ci < target.length) {
+      ci++;
+      var prefix = target.slice(0, ci);
+      typedEl.textContent = base + prefix;
+      paint(prefix);
+      hintEl.textContent = scene.hint;
+      if (scene.words && takeover[prefix]) {
+        showWords(takeover[prefix]);
+        setTimeout(function () {
+          typedEl.textContent = base + scene.commit + " ";
+          hintEl.textContent = "one tap commits the word";
+          hideWords();
+          paint("");
+          setTimeout(nextScene, 1700);
+        }, 1500);
+        return;
+      }
+      setTimeout(step, ci === 1 ? 650 : 330);
+    } else {
+      base = typedEl.textContent + " ";
+      setTimeout(nextScene, 1300);
+    }
+  }
+  function nextScene() {
+    si++;
+    ci = 0;
+    if (si >= script.length) { si = 0; base = ""; typedEl.textContent = ""; }
+    paint("");
+    hideWords();
+    setTimeout(step, 700);
+  }
+  paint("");
+  setTimeout(step, 900);
+})();
+</script>
 </body>
 </html>

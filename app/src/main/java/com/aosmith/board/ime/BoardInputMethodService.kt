@@ -16,6 +16,8 @@ import androidx.core.view.updatePadding
 import com.aosmith.board.Prefs
 import com.aosmith.board.R
 import com.aosmith.board.dict.Dictionary
+import com.aosmith.board.dict.MidWordAction
+import com.aosmith.board.dict.TypingPolicy
 import com.aosmith.board.llm.SpellLlm
 import com.aosmith.board.model.ModelStore
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +50,7 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
     private var sentenceJob: Job? = null
     private var pendingUndo: Undo? = null
     private var undoArmed = false
+    private var suppressedTakeoverPrefix: String? = null
     private val sessionAccepted = HashSet<String>()
 
     private class Undo(val original: String, val replacement: String, val separator: String)
@@ -121,6 +124,8 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
         strip?.clear()
         pendingUndo = null
         undoArmed = false
+        suppressedTakeoverPrefix = null
+        keyboardView?.wordTakeover = null
         cancelLive()
         syncWordFromEditor()
         updateShift()
@@ -134,6 +139,7 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
         sentenceJob?.cancel()
         word.clear()
         keyboardView?.keyWeights = null
+        keyboardView?.wordTakeover = null
     }
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
@@ -219,37 +225,46 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
         val current = word.toString()
         keyboardView?.keyWeights = if (current.isEmpty() || dict == null) null else dict.nextLetters(current)
         if (!suggestionsAllowed || current.isEmpty() || dict == null) {
+            keyboardView?.wordTakeover = null
+            if (current.isEmpty()) suppressedTakeoverPrefix = null
             if (pendingUndo == null || !undoArmed) strip?.clear()
             return
         }
-        // Word-key morphing: with few enough ways to finish this word, offer them whole.
-        if (current.length >= 2) {
-            val completions = dict.completions(current, 3)
-                .filter { !it.equals(current, ignoreCase = true) }
-            if (completions.isNotEmpty()) {
-                strip?.showWordKeys(completions)
-                return
-            }
-        }
-        if (current.length < 2 || dict.isKnown(current) || dict.hasPrefix(current) && current.length < 4) {
-            strip?.clear()
-            return
-        }
-        val typed = SuggestionStripView.Suggestion(current, isTypedWord = true)
-        val wantModel = prefs.liveSuggestions && llm.isReady && current.length >= 3 && current.lowercase() !in sessionAccepted
         liveJob = mainScope.launch {
-            // Dictionary candidates first (a few ms on a background thread), then the model.
-            val dictSuggestions = withContext(Dispatchers.Default) { dict.suggest(current, 2) }
-                .map { SuggestionStripView.Suggestion(it) }
+            val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, current) }
             if (word.toString() != current) return@launch
-            strip?.showSuggestions(listOf(typed) + dictSuggestions)
-            if (!wantModel) return@launch
-            delay(LIVE_DEBOUNCE_MS)
-            val before = textBeforeWord(current) ?: ""
-            val corrected = llm.correctWord(before, current)
-            if (corrected != null && word.toString() == current) {
-                val rest = dictSuggestions.filter { !it.text.equals(corrected, ignoreCase = true) }.take(1)
-                strip?.showSuggestions(listOf(SuggestionStripView.Suggestion(corrected, fromModel = true), typed) + rest)
+            if (action !is MidWordAction.WordKeys) keyboardView?.wordTakeover = null
+            when (action) {
+                is MidWordAction.WordKeys -> {
+                    val suppressed = suppressedTakeoverPrefix?.let { current.startsWith(it) } == true
+                    val minAdded = action.words.minOf { it.length } - current.length
+                    if (!suppressed && minAdded >= 3) {
+                        // So few ways to finish, and enough typing saved, that keys are not
+                        // needed: the words themselves become the keyboard.
+                        keyboardView?.wordTakeover = action.words
+                        strip?.clear()
+                    } else {
+                        keyboardView?.wordTakeover = null
+                        strip?.showWordKeys(action.words)
+                    }
+                }
+                is MidWordAction.Predictions ->
+                    strip?.showSuggestions(action.words.map { SuggestionStripView.Suggestion(it) })
+                is MidWordAction.Typo -> {
+                    val typed = SuggestionStripView.Suggestion(current, isTypedWord = true)
+                    val dictSuggestions = action.dictSuggestions.map { SuggestionStripView.Suggestion(it) }
+                    strip?.showSuggestions(listOf(typed) + dictSuggestions)
+                    if (action.askModel && prefs.liveSuggestions && llm.isReady && current.lowercase() !in sessionAccepted) {
+                        delay(LIVE_DEBOUNCE_MS)
+                        val before = textBeforeWord(current) ?: ""
+                        val corrected = llm.correctWord(before, current)
+                        if (corrected != null && word.toString() == current) {
+                            val rest = dictSuggestions.filter { !it.text.equals(corrected, ignoreCase = true) }.take(1)
+                            strip?.showSuggestions(listOf(SuggestionStripView.Suggestion(corrected, fromModel = true), typed) + rest)
+                        }
+                    }
+                }
+                MidWordAction.None -> if (pendingUndo == null || !undoArmed) strip?.clear()
             }
         }
     }
@@ -264,6 +279,8 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
 
     private fun onWordBoundary(finished: String, separator: String) {
         keyboardView?.keyWeights = null
+        keyboardView?.wordTakeover = null
+        suppressedTakeoverPrefix = null
         if (pendingUndo == null || !undoArmed) strip?.clear()
         if (!correctionAllowed || finished.length < 2 || finished.length > 24) return
         if (!finished.all { it.isLetter() || it == '\'' }) return
@@ -329,6 +346,14 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
 
     // ---- suggestion strip --------------------------------------------------------------
 
+    override fun onWordKey(word: String) = onSuggestionPicked(word, false)
+
+    override fun onEscapeWordMode() {
+        suppressedTakeoverPrefix = word.toString()
+        keyboardView?.wordTakeover = null
+        onWordChanged()
+    }
+
     override fun onSuggestionPicked(text: String, isTypedWord: Boolean) {
         val ic = currentInputConnection ?: return
         cancelLive()
@@ -340,6 +365,8 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
         ic.endBatchEdit()
         word.clear()
         keyboardView?.keyWeights = null
+        keyboardView?.wordTakeover = null
+        suppressedTakeoverPrefix = null
         strip?.clear()
         updateShift()
     }

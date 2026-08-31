@@ -9,6 +9,12 @@ sealed class KeyAction {
     object Shift : KeyAction()
     object Space : KeyAction()
     data class SwitchLayer(val layer: Layer) : KeyAction()
+
+    /** A whole-word key shown during word takeover; commits the word plus a space. */
+    data class Word(val word: String) : KeyAction()
+
+    /** Leaves word takeover and brings the letter keys back. */
+    object EscapeWords : KeyAction()
 }
 
 /** [width] is in key units: one unit is a tenth of the usable keyboard width. */

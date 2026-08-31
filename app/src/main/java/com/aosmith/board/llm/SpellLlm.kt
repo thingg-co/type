@@ -104,7 +104,7 @@ class SpellLlm(private val dictionaryProvider: () -> Dictionary?) {
         val raw = LlamaNative.complete(request + wordTail, 12, Prompts.WORD_GRAMMAR, true)
             ?.toString(Charsets.UTF_8)
         lastLatencyMs = System.currentTimeMillis() - t0
-        val result = sanitizeWord(word, raw)
+        val result = CorrectionFilter.word(dictionaryProvider(), word, raw)
         Log.d(TAG, "word '$word' -> raw='$raw' accepted=$result (${lastLatencyMs} ms)")
         synchronized(cache) { cache[key] = result }
         result
@@ -121,7 +121,7 @@ class SpellLlm(private val dictionaryProvider: () -> Dictionary?) {
         val maxTokens = (trimmed.length / 2 + 16).coerceIn(16, 160)
         val raw = LlamaNative.complete(trimmed + sentenceTail, maxTokens, null, true)?.toString(Charsets.UTF_8)
         lastLatencyMs = System.currentTimeMillis() - t0
-        val result = sanitizeSentence(trimmed, raw)
+        val result = CorrectionFilter.sentence(trimmed, raw)
         Log.d(TAG, "sentence -> raw='$raw' accepted=$result (${lastLatencyMs} ms)")
         result
     }
@@ -182,41 +182,6 @@ class SpellLlm(private val dictionaryProvider: () -> Dictionary?) {
         } else {
             mode = m
         }
-    }
-
-    // ---- output validation ----------------------------------------------------------
-
-    private fun sanitizeWord(original: String, raw: String?): String? {
-        if (raw == null) return null
-        val candidate = raw.trim().trim('[', ']', '"', '.', ',', '!', '?', ':', ';').trim()
-        if (candidate.isEmpty() || candidate.any { it.isWhitespace() }) return null
-        if (candidate.equals(original, ignoreCase = true)) return null
-        val distance = Dictionary.editDistance(candidate.lowercase(), original.lowercase())
-        val limit = when {
-            original.length <= 3 -> 1
-            original.length <= 6 -> 2
-            else -> 3
-        }
-        if (distance > limit) return null
-        val known = dictionaryProvider()?.isKnown(candidate) ?: true
-        // An unknown output is only trusted for a one-edit change; otherwise the model is guessing.
-        if (!known && distance > 1) return null
-        return Dictionary.matchCase(original, candidate)
-    }
-
-    private fun sanitizeSentence(original: String, raw: String?): String? {
-        if (raw == null) return null
-        val candidate = raw.trim().removeSurrounding("\"")
-        if (candidate.isEmpty() || candidate == original) return null
-        // Reject rewrites: length should stay close and most words should survive.
-        val ratio = candidate.length.toDouble() / original.length
-        if (ratio < 0.6 || ratio > 1.5) return null
-        val origWords = original.lowercase().split(Regex("\\s+"))
-        val candWords = candidate.lowercase().split(Regex("\\s+"))
-        if (kotlin.math.abs(origWords.size - candWords.size) > 2) return null
-        val overlap = origWords.count { it in candWords }
-        if (overlap < origWords.size * 0.5) return null
-        return candidate
     }
 
     companion object {
