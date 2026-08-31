@@ -63,6 +63,8 @@ class SuggestionStripView @JvmOverloads constructor(
             fixButton.isEnabled = value
         }
 
+    private val dividers = ArrayList<View>()
+
     init {
         orientation = HORIZONTAL
         setBackgroundColor(ContextCompat.getColor(context, R.color.kb_strip_background))
@@ -70,8 +72,21 @@ class SuggestionStripView @JvmOverloads constructor(
         addView(fixButton)
         addView(statusView)
         chips.forEachIndexed { i, chip ->
-            if (i > 0) addView(makeDivider())
+            if (i > 0) {
+                val d = makeDivider()
+                dividers += d
+                addView(d)
+            }
             addView(chip)
+        }
+        syncDividers()
+    }
+
+    /** A divider is only visible between two visible chips. */
+    private fun syncDividers() {
+        dividers.forEachIndexed { i, d ->
+            val visible = chips[i].visibility == View.VISIBLE && chips[i + 1].visibility == View.VISIBLE
+            d.visibility = if (visible) View.VISIBLE else View.INVISIBLE
         }
     }
 
@@ -110,6 +125,7 @@ class SuggestionStripView @JvmOverloads constructor(
                 chip.setOnClickListener { listener?.onSuggestionPicked(item.text, item.isTypedWord) }
             }
         }
+        syncDividers()
     }
 
     fun showUndo(original: String) {
@@ -126,12 +142,14 @@ class SuggestionStripView @JvmOverloads constructor(
                 chip.setOnClickListener(null)
             }
         }
+        syncDividers()
     }
 
     fun showStatus(text: String) {
         chips.forEach { it.visibility = View.GONE }
         statusView.text = text
         statusView.visibility = View.VISIBLE
+        syncDividers()
     }
 
     fun clear() {
@@ -140,5 +158,6 @@ class SuggestionStripView @JvmOverloads constructor(
             it.visibility = View.INVISIBLE
             it.setOnClickListener(null)
         }
+        syncDividers()
     }
 }

@@ -133,8 +133,10 @@ class SettingsActivity : AppCompatActivity() {
                 visibility = View.GONE
             }
             val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val primary = Button(this, null, com.google.android.material.R.attr.materialButtonStyle)
-            val secondary = Button(this, null, com.google.android.material.R.attr.borderlessButtonStyle)
+            val primary = com.google.android.material.button.MaterialButton(this)
+            val secondary = com.google.android.material.button.MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+            ).apply { (layoutParams as? LinearLayout.LayoutParams)?.marginStart = (8 * dp).toInt() }
             buttons.addView(primary)
             buttons.addView(secondary)
             root.addView(title)

@@ -51,10 +51,25 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            // Local signing only; nothing here is checked in. Set these four in
+            // ~/.gradle/gradle.properties or the environment to produce release builds.
+            val ks = System.getenv("BOARD_KEYSTORE") ?: findProperty("board.keystore")?.toString()
+            if (ks != null && file(ks).exists()) {
+                storeFile = file(ks)
+                storePassword = System.getenv("BOARD_KEYSTORE_PASS") ?: findProperty("board.keystorePass")?.toString()
+                keyAlias = System.getenv("BOARD_KEY_ALIAS") ?: findProperty("board.keyAlias")?.toString() ?: "board"
+                keyPassword = System.getenv("BOARD_KEY_PASS") ?: findProperty("board.keyPass")?.toString()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release").takeIf { it.storeFile != null }
         }
         debug {
             // Keep native code optimised even in debug builds; an unoptimised ggml is unusably slow.
