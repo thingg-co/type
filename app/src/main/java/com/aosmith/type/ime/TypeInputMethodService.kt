@@ -105,11 +105,16 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         container.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         // With targetSdk 35+ the IME window is edge-to-edge, so the bottom row would sit under the
         // navigation bar unless we pad for it ourselves. Below 35 the inset arrives as zero.
+        // The bottom uses the stable (ignoring-visibility) navigation inset too: devices with a
+        // transient taskbar (Android 16) report zero while the bar floats over the app, which
+        // left it covering the spacebar until it auto-hid.
         ViewCompat.setOnApplyWindowInsetsListener(container) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            v.updatePadding(left = bars.left, right = bars.right, bottom = bars.bottom)
+            val stableNav = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars())
+            v.updatePadding(left = bars.left, right = bars.right, bottom = maxOf(bars.bottom, stableNav.bottom))
             insets
         }
+        ViewCompat.requestApplyInsets(container)
         strip = s
         keyboardView = k
         applyPrefsToViews()
