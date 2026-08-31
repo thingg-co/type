@@ -3,7 +3,7 @@
     <string name="app_name">Type</string>
     <string name="subtype_en">English (US)</string>
 
-    <string name="settings_intro">Type is a keyboard that runs a small language model on the phone to fix typos. Nothing you type leaves the device.</string>
+    <string name="settings_intro">Type fixes typos with a language model, predicts your next word with a small neural network, and can learn from your typing. Everything runs on this phone; nothing you type leaves it.</string>
     <string name="step_enable_title">1. Enable Type</string>
     <string name="step_enable_body">Turn on Type in the system list of keyboards.</string>
     <string name="step_enable_button">Open keyboard settings</string>
@@ -13,7 +13,7 @@
     <string name="step_select_button">Choose keyboard</string>
     <string name="step_select_done">Type is the current keyboard</string>
     <string name="step_model_title">3. Download the model</string>
-    <string name="step_model_body">The keyboard works without a model (dictionary suggestions only). Download one to get language model corrections.</string>
+    <string name="step_model_body">Prediction, completions and word keys are built in and work immediately. Download a model to add typo correction and the ✨ sentence fix.</string>
     <string name="model_download">Download</string>
     <string name="model_cancel">Cancel</string>
     <string name="model_delete">Delete</string>

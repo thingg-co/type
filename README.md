@@ -21,6 +21,10 @@ Site: https://thingg-co.github.io/type/
   any dictionary word, dictionary candidates appear immediately and the correction model is
   asked after a short pause.
 - The ✨ button sends the current sentence to the model for a whole-sentence pass.
+- Optional on-device learning: what you type trains a small personal delta over the frozen
+  prediction network (word ids only, app-private, never leaves the phone). A settings toggle
+  controls it, a Forget button erases it, and fields that opt out of personalized learning
+  are respected.
 - Adaptive keys: letters that cannot continue any dictionary word shrink and fade as you type.
   Hit areas do not change, so unusual words stay typable.
 - Word keys: when what you have typed can only end a few ways, the suggestion bar becomes

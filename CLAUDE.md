@@ -27,7 +27,9 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   Damerau-Levenshtein suggestions, adaptive-key weights. `Lexer` finds previous tokens;
   `NeuralLm` (assets/en_nextword.bin, trained/exported by tools/nn/train.py, golden-vector
   tested) predicts and ranks by a three-word window with `Bigrams` (assets/en_bigrams.bin,
-  tools/build_bigrams.py) as fallback; `TypingPolicy` combines them. Word ids in BOTH binary
+  tools/build_bigrams.py) as fallback; `Personalizer` learns sparse per-user deltas over the
+  frozen network (state in files/personal.bin, shape-checked); `TypingPolicy` combines them.
+  Word ids in BOTH binary
   assets are en_words.txt line numbers: changing the word list requires rebuilding the
   bigram table AND retraining the network.
 - `ime/` - `TypeInputMethodService` (word tracking, boundary autocorrect with undo, sentence

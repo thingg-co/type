@@ -140,7 +140,7 @@
 cd type
 ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk</pre>
-  <p>Needs Android Studio's SDK with NDK 28 and CMake 3.31. English only for now; the layout and dictionary are data files, so other languages can be added without touching the input logic. <code>./gradlew test</code> runs the dictionary, policy and filter suites; <code>tools/eval.py</code> replays the model prompts.</p>
+  <p>Needs Android Studio's SDK with NDK 28 and CMake 3.31. English only for now; the layout and dictionary are data files, so other languages can be added without touching the input logic. <code>./gradlew test</code> runs the unit suites; <code>tools/eval.py</code> replays the model prompts.</p>
 
   <footer>
     Free for personal and noncommercial use under the <a href="https://polyformproject.org/licenses/noncommercial/1.0.0">PolyForm Noncommercial License</a>. Commercial use needs a separate license.
