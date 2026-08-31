@@ -222,6 +222,15 @@ class BoardInputMethodService : InputMethodService(), KeyboardView.Listener, Sug
             if (pendingUndo == null || !undoArmed) strip?.clear()
             return
         }
+        // Word-key morphing: with few enough ways to finish this word, offer them whole.
+        if (current.length >= 2) {
+            val completions = dict.completions(current, 3)
+                .filter { !it.equals(current, ignoreCase = true) }
+            if (completions.isNotEmpty()) {
+                strip?.showWordKeys(completions)
+                return
+            }
+        }
         if (current.length < 2 || dict.isKnown(current) || dict.hasPrefix(current) && current.length < 4) {
             strip?.clear()
             return

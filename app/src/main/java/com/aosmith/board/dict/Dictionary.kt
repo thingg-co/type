@@ -43,6 +43,45 @@ class Dictionary private constructor(
         return true
     }
 
+    /**
+     * All dictionary words starting with [prefix], best (most frequent) first, but only when
+     * there are at most [limit] of them; otherwise empty. Powers the word-key morphing: with
+     * few possibilities left, the keyboard can offer whole words instead of letters.
+     */
+    fun completions(prefix: String, limit: Int): List<String> {
+        if (prefix.isEmpty()) return emptyList()
+        var node = root
+        for (c in prefix.lowercase()) node = node.children[c] ?: return emptyList()
+        // Collect a few more raw words than the limit: plural and possessive variants are
+        // folded into one family below, so raw count alone would trigger far too rarely.
+        val rawCap = limit * 3 + 3
+        val found = ArrayList<String>(rawCap + 1)
+        val sb = StringBuilder(prefix.lowercase())
+        fun walk(n: Node): Boolean { // returns false when over the raw cap
+            if (n.terminal) {
+                found += sb.toString()
+                if (found.size > rawCap) return false
+            }
+            for ((c, child) in n.children) {
+                sb.append(c)
+                val ok = walk(child)
+                sb.setLength(sb.length - 1)
+                if (!ok) return false
+            }
+            return true
+        }
+        if (!walk(node)) return emptyList()
+        // One family per stem: "restaurant", "restaurants", "restaurant's" count once, and the
+        // most frequent member represents it.
+        fun stem(w: String) = w.removeSuffix("'s").removeSuffix("s'").let { if (it.length > 3) it.removeSuffix("s") else it }
+        val families = found.groupBy(::stem)
+        if (families.size > limit) return emptyList()
+        return families.values
+            .map { members -> members.minBy { rank[it] ?: Int.MAX_VALUE } }
+            .sortedBy { rank[it] ?: Int.MAX_VALUE }
+            .map { matchCase(prefix, it) }
+    }
+
     /** Letters that can follow [prefix] in some dictionary word, weighted by frequency (sums to 1). */
     fun nextLetters(prefix: String): Map<Char, Float> {
         var node = root

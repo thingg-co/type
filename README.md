@@ -18,6 +18,9 @@ Site: https://thingg-co.github.io/type/
 - The ✨ button sends the current sentence to the model for a whole-sentence pass.
 - Adaptive keys: letters that cannot continue any dictionary word shrink and fade as you type.
   Hit areas do not change, so unusual words stay typable.
+- Word keys: when what you have typed can only end a few ways, the suggestion bar becomes
+  whole-word keys (type "restau" and tap "restaurant"). Plural and possessive variants count
+  as one family.
 - Passwords, email and URL fields, and fields that opt out of suggestions are left alone.
 
 ## Layout of the code
