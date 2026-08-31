@@ -78,7 +78,7 @@ object TypingPolicy {
         } else {
             val prev = previousWords.lastOrNull() ?: return emptyList()
             if (bigrams == null) return emptyList()
-            val prevId = dict.idOf(prev)
+            val prevId = resolveId(dict, prev)
             if (prevId < 0) return emptyList()
             bigrams.nextWords(prevId, max + 1).mapNotNull { dict.wordOf(it.first) }
         }
@@ -126,7 +126,7 @@ object TypingPolicy {
         }
         val prev = previousWords.lastOrNull() ?: return 0f
         if (bigrams == null) return 0f
-        val prevId = dict.idOf(prev)
+        val prevId = resolveId(dict, prev)
         if (prevId < 0) return 0f
         return bigrams.score(prevId, dict.idOf(word)).toFloat()
     }
