@@ -245,6 +245,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             val beforeText = textBeforeWord(current) ?: ""
             val prev = Lexer.previousWord(beforeText)
             val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, prev, current) }
+            Log.d(TAG, "midWord '$current' prev=$prev bigrams=${bigrams != null} -> ${action.javaClass.simpleName}")
             if (word.toString() != current) return@launch
             if (action !is MidWordAction.WordKeys) keyboardView?.wordTakeover = null
             when (action) {

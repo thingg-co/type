@@ -116,20 +116,21 @@ class Dictionary(words: Sequence<String>) {
         if (prefix.isEmpty()) return emptyList()
         var node = root
         for (c in prefix.lowercase()) node = node.children[c] ?: return emptyList()
-        val found = ArrayList<String>(32)
-        val sb = StringBuilder(prefix.lowercase())
-        // Heaviest branches first, stop early: frequent words surface without a full walk.
-        fun walk(n: Node) {
-            if (found.size >= 25) return
-            if (n.terminal) found += sb.toString()
-            for ((c, child) in n.children.entries.sortedByDescending { it.value.weight }) {
-                if (found.size >= 25) return
-                sb.append(c)
-                walk(child)
-                sb.setLength(sb.length - 1)
-            }
+        // Best-first over the whole frontier, not depth-first: a plain DFS with a cap can
+        // exhaust its budget inside the first heavy branch ("har...") and never reach the
+        // sibling that holds the frequent words ("have"). Found the hard way.
+        class Entry(val node: Node, val text: String)
+
+        val queue = java.util.PriorityQueue<Entry>(16, compareByDescending { it.node.weight })
+        queue.add(Entry(node, prefix.lowercase()))
+        val found = ArrayList<String>(max * 3)
+        var visited = 0
+        while (queue.isNotEmpty() && found.size < max * 3 && visited < 400) {
+            val e = queue.poll()
+            visited++
+            if (e.node.terminal) found += e.text
+            for ((c, child) in e.node.children) queue.add(Entry(child, e.text + c))
         }
-        walk(node)
         return found.sortedBy { rank[it] ?: Int.MAX_VALUE }.take(max).map { matchCase(prefix, it) }
     }
 
