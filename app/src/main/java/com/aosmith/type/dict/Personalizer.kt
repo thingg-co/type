@@ -138,6 +138,7 @@ class Personalizer(private val base: NeuralLm) {
             d.writeLong(lifetimeSamples)
             d.writeInt(base.dim)
             d.writeInt(base.k)
+            d.writeInt(base.vocab)
             fun writeRows(m: java.util.concurrent.ConcurrentHashMap<Int, FloatArray>) {
                 d.writeInt(m.size)
                 for ((id, v) in m) {
@@ -163,7 +164,7 @@ class Personalizer(private val base: NeuralLm) {
             d.readFully(magic)
             if (!magic.contentEquals(MAGIC)) throw IOException("bad personalization file")
             lifetimeSamples = d.readLong()
-            if (d.readInt() != base.dim || d.readInt() != base.k) {
+            if (d.readInt() != base.dim || d.readInt() != base.k || d.readInt() != base.vocab) {
                 throw IOException("saved for a different model shape; starting fresh")
             }
             fun readRows(m: java.util.concurrent.ConcurrentHashMap<Int, FloatArray>) {

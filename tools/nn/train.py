@@ -83,14 +83,22 @@ def main():
     B = int(args[args.index("--batch") + 1]) if "--batch" in args else 1024
     layers = int(args[args.index("--layers") + 1]) if "--layers" in args else 1
     hidden = int(args[args.index("--hidden") + 1]) if "--hidden" in args else 256
+    negs = int(args[args.index("--negs") + 1]) if "--negs" in args else 8192
 
     n_words = sum(1 for _ in open("app/src/main/assets/en_words.txt", encoding="utf-8"))
     V = n_words + 2  # BOS, UNK
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"V={V} E={E} K={K} steps={steps} device={dev}")
 
-    tr_ctx, tr_tgt = windows(load_stream(f"{data_dir}/train.bin"), V)
-    va_ctx, va_tgt = windows(load_stream(f"{data_dir}/val.bin"), V)
+    cache = f"{data_dir}/win_k{K}.npz"
+    try:
+        z = np.load(cache)
+        tr_ctx, tr_tgt, va_ctx, va_tgt = z["tc"], z["tt"], z["vc"], z["vt"]
+        print(f"windows loaded from cache {cache}")
+    except Exception:
+        tr_ctx, tr_tgt = windows(load_stream(f"{data_dir}/train.bin"), V)
+        va_ctx, va_tgt = windows(load_stream(f"{data_dir}/val.bin"), V)
+        np.savez(cache, tc=tr_ctx, tt=tr_tgt, vc=va_ctx, vt=va_tgt)
     print(f"train windows {len(tr_tgt)}, val {len(va_tgt)}")
 
     model = NextWord(V, E, layers, hidden).to(dev)
@@ -106,7 +114,25 @@ def main():
         idx = torch.randint(0, n, (B,))
         ctx = tr_ctx_t[idx].to(dev)
         tgt = tr_tgt_t[idx].to(dev)
-        loss = F.cross_entropy(model(ctx), tgt)
+        # Sampled softmax: score the batch targets plus shared random negatives instead of
+        # the whole vocabulary. Validation below still uses the full softmax, so reported
+        # metrics stay comparable across trainer versions.
+        e = model.emb(ctx).flatten(1)
+        h = model.trunk(e)
+        # Zipfian negatives: ids are frequency-ordered, so log-uniform sampling yields the
+        # hard, frequent negatives a uniform draw almost never picks.
+        neg = (torch.rand(negs, device=dev) * math.log(float(V))).exp().long().clamp(1, V - 1) - 1
+        cand = torch.cat([tgt, neg])
+        logits = h @ model.emb.weight[cand].T + model.bout[cand]
+        # logQ correction for the biased sampler (log-uniform: q ~ 1/((id+1) ln V)).
+        logq = -torch.log((cand + 1).float()) - math.log(math.log(float(V)))
+        logits = logits - logq.unsqueeze(0)
+        # Accidental-hit masking: frequent targets appear many times per batch; without
+        # this, duplicate columns compete with the true label and dilute the gradient.
+        hits = tgt.unsqueeze(1) == cand.unsqueeze(0)
+        hits[torch.arange(len(tgt), device=dev), torch.arange(len(tgt), device=dev)] = False
+        logits = logits.masked_fill(hits, -1e9)
+        loss = F.cross_entropy(logits, torch.arange(len(tgt), device=dev))
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()

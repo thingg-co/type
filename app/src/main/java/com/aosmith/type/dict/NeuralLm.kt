@@ -99,10 +99,14 @@ class NeuralLm private constructor(
         return v
     }
 
-    /** Logits for a small candidate set (mid-word reranking). */
+    /** Logits for a small candidate set (mid-word reranking). Ids beyond this network's
+     * vocabulary (words appended to the list after training) score as UNK. */
     fun scoreCandidates(contextIds: List<Int>, candidateIds: IntArray): FloatArray {
         val h = hidden(contextIds)
-        return FloatArray(candidateIds.size) { logit(candidateIds[it], h) }
+        return FloatArray(candidateIds.size) {
+            val id = candidateIds[it]
+            logit(if (id in 0 until vocab) id else unk, h)
+        }
     }
 
     /** Best next-word ids over the whole vocabulary, specials excluded. */
