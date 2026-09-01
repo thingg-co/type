@@ -28,6 +28,12 @@ object CorrectionFilter {
             else -> 3f
         }
         if (distance > limit) return null
+        // Weights (KeyNeighbors, per-user slip profile) may discount how suspicious an
+        // edit is, never how many edits there are: with enough personal discounts a
+        // five-substitution rewrite (minefield -> minecraft) squeezed under the
+        // weighted limit. The raw edit count gets one edit of slack, no more.
+        val plain = Dictionary.editDistance(candidate.lowercase(), original.lowercase())
+        if (plain > limit + 1) return null
         val known = dictionary?.isKnown(candidate) ?: true
         // An unknown output is only trusted for a one-edit change; otherwise the model is guessing.
         if (!known && distance > 1f) return null

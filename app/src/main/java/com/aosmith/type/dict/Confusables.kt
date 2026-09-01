@@ -61,4 +61,30 @@ object Confusables {
      */
     const val SEND_FORWARD_MARGIN = 6.0f
     const val SEND_LOOKBACK_MARGIN = 8.0f
+
+    /**
+     * Directed per-pair lookback overrides, measured like the globals (Tatoeba
+     * 2026-09-01 run, 500 cases per set per label):
+     *
+     * its -> it's at 5.0: FP 0/83, catch 77.9% (the global 6.0 catches only 57.8%).
+     * The prior is real — typed "its" is usually a meant "it's" — and the lookback
+     * pass is where the sentence decides it, so this pair earns a lower bar.
+     *
+     * id -> i'd at 8.0: bare "id" is legitimately ID in chat and the prose corpus
+     * barely samples it (3 correct rows), so eagerness cannot be justified; the
+     * raised bar still catches 98.2% because the net is near-certain in real I'd
+     * contexts ("id love to"). The acronym's casing itself waits for cased vocab ids.
+     */
+    private val LOOKBACK_OVERRIDES = mapOf(
+        ("its" to "it's") to 5.0f,
+        ("id" to "i'd") to 8.0f,
+    )
+
+    /** The lookback bar for flipping [typed] to [alt]; the global unless measured otherwise. */
+    fun lookbackMargin(typed: String, alt: String): Float =
+        LOOKBACK_OVERRIDES[typed.lowercase() to alt.lowercase()] ?: LOOKBACK_MARGIN
+
+    /** Send-time lookback bar: never below the send global, whatever the pair override. */
+    fun sendLookbackMargin(typed: String, alt: String): Float =
+        maxOf(lookbackMargin(typed, alt), SEND_LOOKBACK_MARGIN)
 }

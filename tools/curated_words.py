@@ -89,13 +89,49 @@ beijing shanghai taipei manila jakarta hanoi saigon kyoto osaka""".split()
 
 PLACE_HOLDOUTS = set("turkey nice mobile orange reading buffalo jersey bath split mesa normal surprise industry queens".split())
 
+# Modern tech, AI, and everyday-medical vocabulary the frequency corpus lags on.
+TECH = """qwen chatgpt gpt llm llms lora rag gguf agentic multimodal tokenizer
+tokenizers finetune finetuned finetuning hallucinate hallucinated hallucination
+hallucinations deepseek mistral ollama anthropic openai copilot midjourney
+kubernetes devops fullstack oauth webhook webhooks microservice microservices
+serverless postgres postgresql sqlite graphql grpc json yaml toml regex regexes
+repo repos monorepo github gitlab rebase refactor refactored refactoring linter
+linting typescript javascript kotlin golang nodejs svelte flutter nextjs vite
+sideload sideloaded sideloading adb apk apks emulator? oled amoled nvme ssd gpu
+gpus tpu cpu? hdmi usb vpn dns ssl tls url urls uri udp tcp ipv6 gigabyte
+terabyte petabyte firmware middleware crypto bitcoin ethereum blockchain nft
+stablecoin defi hodl staking sats mah ghz mhz hz nits qi
+ibuprofen paracetamol acetaminophen tylenol advil amoxicillin antihistamine
+melatonin probiotic probiotics electrolyte electrolytes cortisol dopamine
+serotonin triglycerides sciatica tendonitis tinnitus apnea telehealth copay
+dermatologist cardiologist neurologist pediatrician physiotherapy physio
+chiropractor mri ekg ecg covid vaccine? booster?""".replace("?", "").split()
+
+# Brand and acronym casing the caps table should enforce (exact canonical forms;
+# ambiguous readings like python/java/rust/react/swift/windows stay out on the same
+# rule as the name holdouts).
+CASED = {
+    "qwen": "Qwen", "chatgpt": "ChatGPT", "gpt": "GPT", "deepseek": "DeepSeek",
+    "mistral": "Mistral", "anthropic": "Anthropic", "openai": "OpenAI",
+    "midjourney": "Midjourney", "kubernetes": "Kubernetes", "postgres": "Postgres",
+    "postgresql": "PostgreSQL", "graphql": "GraphQL", "github": "GitHub",
+    "gitlab": "GitLab", "typescript": "TypeScript", "javascript": "JavaScript",
+    "kotlin": "Kotlin", "nodejs": "NodeJS", "svelte": "Svelte", "flutter": "Flutter",
+    "json": "JSON", "yaml": "YAML", "toml": "TOML", "oled": "OLED", "amoled": "AMOLED",
+    "nvme": "NVMe", "ssd": "SSD", "gpu": "GPU", "tpu": "TPU", "hdmi": "HDMI",
+    "usb": "USB", "vpn": "VPN", "dns": "DNS", "ssl": "SSL", "tls": "TLS",
+    "url": "URL", "urls": "URLs", "udp": "UDP", "tcp": "TCP", "ipv6": "IPv6",
+    "nft": "NFT", "bitcoin": "Bitcoin", "ethereum": "Ethereum", "tylenol": "Tylenol",
+    "advil": "Advil", "mri": "MRI", "ekg": "EKG", "ecg": "ECG", "ollama": "Ollama",
+}
+
 vocab = [w.rstrip("\n") for w in open(VOCAB, encoding="utf-8")]
 have = set(vocab)
 caps_lines = open(CAPS, encoding="utf-8").read().splitlines()
 caps_have = set(l.split("\t")[0] for l in caps_lines if l and not l.startswith("#") and "\t" in l)
 
 cased_names = sorted((set(NAMES) | set(PLACES)) - PLACE_HOLDOUTS)
-new_words = sorted(set(w for w in SLANG if w not in have)) + [n for n in cased_names if n not in have]
+new_words = sorted(set(w for w in SLANG + TECH if w not in have)) + [n for n in cased_names if n not in have]
 if len(vocab) + len(new_words) > ID_CAP:
     sys.exit("id space exhausted: %d + %d > %d" % (len(vocab), len(new_words), ID_CAP))
 
@@ -104,13 +140,15 @@ if new_words:
         for w in new_words:
             f.write(w + "\n")
 
-new_caps = [n for n in cased_names if n not in caps_have]
+caps_entries = {n: n.capitalize() for n in cased_names}
+caps_entries.update(CASED)
+new_caps = sorted(k for k in caps_entries if k not in caps_have)
 if new_caps:
     with open(CAPS, "a", encoding="utf-8") as f:
         if CAPS_MARK not in caps_lines:
             f.write(CAPS_MARK + "\n")
         for n in new_caps:
-            f.write("%s\t%s\n" % (n, n.capitalize()))
+            f.write("%s\t%s\n" % (n, caps_entries[n]))
 
 print("words appended: %d (vocab now %d)" % (len(new_words), len(vocab) + len(new_words)))
 print("caps entries added: %d" % len(new_caps))

@@ -2,6 +2,7 @@ package com.aosmith.type.dict
 
 import java.io.File
 import java.io.FileInputStream
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.Test
@@ -108,5 +109,32 @@ class ConfusableMarginProbeTest {
             println("lookback-neg [$ctx $typed $next] margin=%.2f winner=$winner".format(margin))
             assertTrue("[$ctx $typed $next] margin $margin must stay under LOOKBACK", margin < Confusables.LOOKBACK_MARGIN)
         }
+    }
+
+    @Test fun `directed overrides hold their calibrated values`() {
+        // its -> it's earns a lower bar (measured FP 0/83 at 5.0, catch 77.9%); id -> i'd
+        // a raised one (bare ID is real chat usage the prose corpus barely samples).
+        assertEquals(5.0f, Confusables.lookbackMargin("its", "it's"))
+        assertEquals(8.0f, Confusables.lookbackMargin("id", "i'd"))
+        // Unlisted directions fall back to the global.
+        assertEquals(Confusables.LOOKBACK_MARGIN, Confusables.lookbackMargin("your", "you're"))
+        assertEquals(Confusables.LOOKBACK_MARGIN, Confusables.lookbackMargin("it's", "its"))
+        // Send-time never dips below the send global.
+        assertEquals(Confusables.SEND_LOOKBACK_MARGIN, Confusables.sendLookbackMargin("its", "it's"))
+    }
+
+    @Test fun `its flips to it's by lookback at the lowered bar`() {
+        // The user prior: typed "its" is usually a meant "it's"; the sentence decides.
+        val (margin, winner) = lookbackMargin(listOf("i", "think"), "its", "great")
+        println("lookback [i think its great] margin=%.2f winner=$winner".format(margin))
+        assertTrue("winner $winner", winner == "it's")
+        assertTrue("margin $margin must clear the its->it's bar", margin > Confusables.lookbackMargin("its", "it's"))
+        // Possessive usage must stay quiet even at the lowered bar.
+        val (negMargin, negWinner) = lookbackMargin(listOf("the", "phone"), "its", "battery")
+        println("lookback-neg [the phone its battery] margin=%.2f winner=$negWinner".format(negMargin))
+        assertTrue(
+            "possessive margin $negMargin must stay under the its->it's bar",
+            negWinner != "it's" || negMargin < Confusables.lookbackMargin("its", "it's"),
+        )
     }
 }

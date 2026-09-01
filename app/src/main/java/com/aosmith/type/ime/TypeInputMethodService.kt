@@ -879,7 +879,11 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 best = j
             }
         }
-        val bar = if (eos) Confusables.SEND_LOOKBACK_MARGIN else Confusables.LOOKBACK_MARGIN
+        val bar = if (eos) {
+            Confusables.sendLookbackMargin(prevLower, alts[best])
+        } else {
+            Confusables.lookbackMargin(prevLower, alts[best])
+        }
         if (bestTotal - typedTotal <= bar) return false
         val sep = beforeText.substring(end)
         applyCorrection(prevCased, sep, Contractions.applyCase(prevCased, alts[best]))

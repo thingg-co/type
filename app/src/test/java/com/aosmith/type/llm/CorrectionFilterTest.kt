@@ -33,6 +33,13 @@ class CorrectionFilterTest {
         assertNull(CorrectionFilter.word(dict, "blorbit", "florbix"))
     }
 
+    @Test fun `weights never excuse a many-edit rewrite`() {
+        // minefield -> minecraft is five substitutions; per-user slip discounts once
+        // squeezed it under the weighted limit. The raw edit count caps it regardless.
+        val d = Dictionary(sequenceOf("minecraft", "minefield"))
+        assertNull(CorrectionFilter.word(d, "minefield", "minecraft"))
+    }
+
     @Test fun `rejects empty and multi-word output`() {
         assertNull(CorrectionFilter.word(dict, "resturant", null))
         assertNull(CorrectionFilter.word(dict, "resturant", "  "))
