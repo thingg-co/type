@@ -13,10 +13,10 @@ Site: https://thingg-co.github.io/type/
   answer is close enough to what you typed (edit distance and dictionary checks), the word is
   replaced. An undo chip appears in the suggestion bar; backspace straight after a correction
   restores the original too.
-- While you type, the bar is context-aware: a lexer reads the previous tokens and a 13 MB
-  on-device neural network (four-word window, 192-d, int8, trained on 50M words by tools/nn/)
+- While you type, the bar is context-aware: a lexer reads the previous tokens and a 26 MB
+  on-device neural network (four-word window, 192-d, int8, trained on 54M words by tools/nn/)
   suggests the next word after each space and ranks completions ("should ha" puts "have"
-  first). On held-out text it hits top-3 next-word 32.5% vs 19.7% for the bigram table it
+  first). On held-out text it hits top-3 next-word 33.6% vs 20.0% for the bigram table it
   replaced; the bigram table stays as an instant fallback. If what you typed cannot start
   any dictionary word, dictionary candidates appear immediately and the correction model is
   asked after a short pause.
@@ -47,7 +47,7 @@ app/src/main/java/.../dict/         Dictionary: frequency list + trie, edit-dist
 app/src/main/java/.../ime/          InputMethodService, KeyboardView, SuggestionStripView, layouts
 app/src/main/java/.../model/        Model catalog, storage, resumable downloader
 app/src/main/java/.../SettingsActivity.kt   setup steps, model download, options, test field
-app/src/main/assets/en_words.txt    52k English words, most frequent first
+app/src/main/assets/en_words.txt    126k English words, most frequent first
 tools/                              desktop eval harness used to choose the model and prompt
 public/                             the GitHub Pages site
 third_party/llama.cpp               git submodule
