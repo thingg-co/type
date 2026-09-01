@@ -244,6 +244,22 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
     }
 
+    /**
+     * The other half of hide-on-reorientation: the system restores the keyboard after a
+     * rotation by asking for a show with configChange=true, which overrides the
+     * requestHideSelf above (observed directly: hide requested at the config change,
+     * window re-shown 700 ms later by the restore). Refusing config-change shows is the
+     * designed way to stay hidden across reorientation; a user's tap on a field arrives
+     * with configChange=false and shows normally.
+     */
+    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
+        if (configChange) {
+            if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onShowInputRequested: refusing config-change restore")
+            return false
+        }
+        return super.onShowInputRequested(flags, configChange)
+    }
+
     // ---- window lifecycle instrumentation (debug builds only) ------------------------
     // Chasing the stuck-surface bug: system marks the IME hidden while the window stays
     // painted (insets-animation leash abandoned). These logs turn one real occurrence
