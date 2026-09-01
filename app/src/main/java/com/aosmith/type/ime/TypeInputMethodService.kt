@@ -241,23 +241,41 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // animation with a show is how the 0.5.7 bounce re-latched what it had cured.
         if (rotated && wasShown) {
             refuseShowsUntil = android.os.SystemClock.uptimeMillis() + SHOW_QUARANTINE_MS
+            refusedAppShow = false
             requestHideSelf(0)
+            reshowJob?.cancel()
+            reshowJob = mainScope.launch {
+                delay(SHOW_QUARANTINE_MS + 100)
+                // The app asked for the keyboard during the quarantine and was told no,
+                // and after a refusal the input manager dedups identical requests, so a
+                // later tap on the already-focused field produces no new request at all
+                // (observed: four refused shows, then silence — landscape stranded).
+                // Honor the app's wish ourselves, now that layout is settled: this is
+                // the same show a fresh tap produces, the one path that always lays out
+                // correctly.
+                if (refusedAppShow && currentInputConnection != null && !isInputViewShown) {
+                    if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-quarantine reshow")
+                    requestShowSelf(0)
+                }
+            }
         }
     }
 
     private var refuseShowsUntil = 0L
+    private var refusedAppShow = false
+    private var reshowJob: kotlinx.coroutines.Job? = null
 
     /**
-     * The other half of hide-on-reorientation. After the requestHideSelf above, the
-     * keyboard comes back twice: the system's restore (a show with configChange=true —
-     * refused by flag), and ~600 ms later an unmarked show from the app itself
-     * re-requesting the keyboard for its still-focused field (observed in the logs with
-     * no way to tell it from a tap by its arguments). No human taps a field 600 ms into
-     * a rotation, so time is the discriminator: every show inside the quarantine is
-     * refused, fail-closed. A tap that does land that early costs one more tap.
+     * Companion to the hide above. After the requestHideSelf, shows keep arriving: the
+     * system restore (configChange=true) and, ~600 ms in, unmarked re-requests from the
+     * app for its still-focused field — indistinguishable from a tap by arguments, and
+     * landing them mid-settle is exactly the latch. Time separates them: everything
+     * inside the quarantine is refused and remembered, and the scheduled reshow honors
+     * it once layout has settled.
      */
     override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
         if (configChange || android.os.SystemClock.uptimeMillis() < refuseShowsUntil) {
+            if (!configChange) refusedAppShow = true
             if (com.aosmith.type.BuildConfig.DEBUG) {
                 Log.d(TAG, "onShowInputRequested: refused (configChange=$configChange)")
             }
