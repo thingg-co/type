@@ -13,8 +13,8 @@ android {
         applicationId = "co.thingg.type"
         minSdk = 28
         targetSdk = 36
-        versionCode = 36
-        versionName = "0.6.18"
+        versionCode = 37
+        versionName = "0.6.19"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

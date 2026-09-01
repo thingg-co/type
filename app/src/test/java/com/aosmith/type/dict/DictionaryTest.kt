@@ -2,6 +2,7 @@ package com.aosmith.type.dict
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,6 +18,14 @@ class DictionaryTest {
         assertTrue(dict.isKnown("restaurant's"))  // possessive of a listed word
         assertFalse(dict.isKnown("experiwnce"))
         assertFalse(dict.isKnown(""))
+    }
+
+    @Test fun `short slip fix substitutes one adjacent key into a common word`() {
+        val d = Dictionary(sequenceOf("so", "on", "sky", "ask"))
+        assertEquals("so", d.shortSlipFix("sk"))     // k sits under o
+        assertEquals("So", d.shortSlipFix("Sk"))     // casing mirrored
+        assertNull(d.shortSlipFix("qz"))             // no common neighbour substitution
+        assertNull(d.shortSlipFix("s"))              // too short to judge
     }
 
     @Test fun `hasPrefix follows the trie`() {

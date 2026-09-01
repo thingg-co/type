@@ -820,14 +820,17 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // A capitalized unknown word mid-sentence is almost always a name ("meet Alexei
         // at"): the model's guesses there mangle exactly the words it cannot know. At a
         // sentence start capitalization carries no signal and correction stays on.
-        if (finished[0].isUpperCase() && finished.drop(1).any { it.isLowerCase() } &&
+        // (Two-letter tokens are never names; the guard needs three letters to mean one.)
+        if (finished.length >= 3 && finished[0].isUpperCase() && finished.drop(1).any { it.isLowerCase() } &&
             Lexer.previousWord(before) != null
         ) return
         mainScope.launch {
-            val corrected = if (llm.isReady) {
-                llm.correctWord(before, finished)
-            } else {
-                dictionaryOnlyCorrection(dict, finished)
+            val corrected = when {
+                // Two letters are beneath the model's dignity and above its accuracy:
+                // the deterministic adjacent-substitution rule decides ("Sk" -> "So").
+                finished.length <= 2 -> dict.shortSlipFix(finished)
+                llm.isReady -> llm.correctWord(before, finished)
+                else -> dictionaryOnlyCorrection(dict, finished)
             }
             if (corrected != null && !corrected.equals(finished, ignoreCase = true)) {
                 applyCorrection(finished, separator, corrected)
@@ -1003,7 +1006,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     /** Without a model only very safe fixes are applied: one edit away from a common word. */
     private fun dictionaryOnlyCorrection(dict: Dictionary, typed: String): String? {
-        if (typed.length < 4) return null
+        if (typed.length < 4) return dict.shortSlipFix(typed)
         val best = dict.suggest(typed, 1).firstOrNull() ?: return null
         if (Dictionary.editDistance(best.lowercase(), typed.lowercase()) != 1) return null
         if (dict.rankOf(best) > 15_000) return null

@@ -233,6 +233,34 @@ class Dictionary(words: Sequence<String>) {
         return found.take(max).map { it.first }
     }
 
+    /**
+     * The safe fix for a very short unknown word: exactly one adjacent-key substitution
+     * landing on a very common word ("sk" -> "so", k sits under o). Substitution only —
+     * inserts and deletes on two letters mangle abbreviations — and only into the top
+     * ranks, so "qz" stays untouched. Callers gate on isKnown first.
+     */
+    fun shortSlipFix(word: String): String? {
+        val w = word.lowercase()
+        if (w.length !in 2..3 || !w.all { it.isLetter() }) return null
+        var best: String? = null
+        var bestRank = SHORT_SLIP_MAX_RANK + 1
+        val chars = w.toCharArray()
+        for (i in chars.indices) {
+            val orig = chars[i]
+            for (alt in KeyNeighbors.neighbors(orig)) {
+                chars[i] = alt
+                val candidate = String(chars)
+                val r = rank[candidate]
+                if (r != null && r < bestRank && misspellings?.isMisspelling(candidate) != true) {
+                    best = candidate
+                    bestRank = r
+                }
+            }
+            chars[i] = orig
+        }
+        return best?.let { matchCase(word, it) }
+    }
+
     private class DistanceBuffers(n: Int) {
         var prev2 = FloatArray(n)
         var prev = FloatArray(n)
@@ -282,6 +310,7 @@ class Dictionary(words: Sequence<String>) {
          * "mot", "mand", "nake") starts around 6000.
          */
         const val SLIP_MIN_RANK = 4000
+        const val SHORT_SLIP_MAX_RANK = 2000
 
         /** A slip candidate must beat the typed word's rank by this factor. */
         const val SLIP_RANK_RATIO = 20
