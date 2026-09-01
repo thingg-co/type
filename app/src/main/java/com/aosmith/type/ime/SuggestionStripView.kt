@@ -101,8 +101,10 @@ class SuggestionStripView @JvmOverloads constructor(
     fun showSuggestions(items: List<Suggestion>) {
         bubbleCaret()?.let { caret ->
             bubbles?.show(items, caret)
-            hideChips()
-            return
+            if (bubbles?.isShowing == true) {
+                hideChips()
+                return
+            }
         }
         bubbles?.dismiss()
         statusView.visibility = View.GONE

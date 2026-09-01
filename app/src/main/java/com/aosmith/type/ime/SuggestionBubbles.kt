@@ -98,15 +98,32 @@ class SuggestionBubbles(private val anchor: View) {
         row.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val w = row.measuredWidth
         val h = row.measuredHeight
+        // Popup coordinates are relative to the IME window's origin, which sits at the
+        // keyboard's top — not the screen's. Convert the caret's screen rect; above the
+        // keyboard the y goes negative, which clipping-disabled popups accept (the key
+        // preview trick).
+        val winLoc = IntArray(2)
+        val scrLoc = IntArray(2)
+        anchor.getLocationInWindow(winLoc)
+        anchor.getLocationOnScreen(scrLoc)
+        val originX = scrLoc[0] - winLoc[0]
+        val originY = scrLoc[1] - winLoc[1]
         val screenW = anchor.resources.displayMetrics.widthPixels
-        val x = (caret.left - w / 4).coerceIn((4 * dp).toInt(), (screenW - w - 4 * dp).toInt().coerceAtLeast(0))
-        val y = (caret.top - h - (6 * dp).toInt()).coerceAtLeast((4 * dp).toInt())
+        val xScreen = (caret.left - w / 4).coerceIn((4 * dp).toInt(), (screenW - w - (4 * dp).toInt()).coerceAtLeast(0))
+        val x = xScreen - originX
+        val y = caret.top - originY - h - (6 * dp).toInt()
         if (popup.isShowing) {
             popup.update(x, y, -1, -1)
         } else if (anchor.windowToken != null) {
-            popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
+            try {
+                popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
+            } catch (e: Exception) {
+                android.util.Log.w("SuggestionBubbles", "show failed", e)
+            }
         }
     }
+
+    val isShowing: Boolean get() = popup.isShowing
 
     fun dismiss() {
         if (popup.isShowing) popup.dismiss()
