@@ -248,9 +248,19 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 val root = strip?.parent as? View ?: return@launch
                 if (!isInputViewShown) return@launch
                 if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-rotation insets nudge")
-                root.setPadding(0, 0, 0, 1)
-                delay(50) // one relayout and insets dispatch at the nudged frame
-                root.setPadding(0, 0, 0, 0)
+                // The root's bottom padding carries the navigation-bar inset: nudge
+                // relative to it and restore it exactly, never overwrite it (0.6.8
+                // zeroed it and dropped the keyboard under the gesture area).
+                val l = root.paddingLeft
+                val t = root.paddingTop
+                val r = root.paddingRight
+                val b = root.paddingBottom
+                root.setPadding(l, t, r, b + 1)
+                try {
+                    delay(50) // one relayout and insets dispatch at the nudged frame
+                } finally {
+                    root.setPadding(l, t, r, b)
+                }
             }
         }
     }
