@@ -106,6 +106,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onCreate() {
         super.onCreate()
+        lastOrientation = resources.configuration.orientation
         prefs = Prefs(this)
         store = ModelStore(this)
         llm = SpellLlm { dictionary }
@@ -219,12 +220,28 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    private var lastOrientation = android.content.res.Configuration.ORIENTATION_UNDEFINED
+
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         val wasShown = isInputViewShown
+        val rotated = newConfig.orientation != lastOrientation
+        lastOrientation = newConfig.orientation
         if (com.aosmith.type.BuildConfig.DEBUG) {
-            Log.d(TAG, "onConfigurationChanged orientation=${newConfig.orientation} wasShown=$wasShown")
+            Log.d(TAG, "onConfigurationChanged orientation=${newConfig.orientation} wasShown=$wasShown rotated=$rotated")
         }
         super.onConfigurationChanged(newConfig)
+        // Hide instead of riding the rotation out. A keyboard that stays shown through
+        // reorientation latches the host app's layout on the T807D — the app relayouts
+        // as if no keyboard exists while the keyboard keeps painting over it, and every
+        // keyboard tested does it (Type, Gboard, FUTO), so it is not avoidable from in
+        // here. Hidden, the app's full-height layout is simply correct, and the next
+        // tap on the field is a fresh show into settled geometry: a clean insets
+        // negotiation every time. One extra tap after rotating is a better deal than
+        // typing into an input pinned off-screen. No auto-reshow — racing the rotation
+        // animation with a show is how the 0.5.7 bounce re-latched what it had cured.
+        if (rotated && wasShown) {
+            requestHideSelf(0)
+        }
     }
 
     // ---- window lifecycle instrumentation (debug builds only) ------------------------
