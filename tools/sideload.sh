@@ -14,14 +14,14 @@ APK="app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
 
 "$ADB" get-state >/dev/null 2>&1 || { echo "no device: enable USB debugging and accept the prompt"; exit 1; }
 "$ADB" install -r "$APK"
-"$ADB" shell ime enable com.aosmith.type/.ime.TypeInputMethodService
-"$ADB" shell ime set com.aosmith.type/.ime.TypeInputMethodService
+"$ADB" shell ime enable co.thingg.type/com.aosmith.type.ime.TypeInputMethodService
+"$ADB" shell ime set co.thingg.type/com.aosmith.type.ime.TypeInputMethodService
 
 if [ -n "$MODEL" ]; then
     if [ "$VARIANT" = "debug" ]; then
         base="$(basename "$MODEL")"
         "$ADB" push "$MODEL" "/data/local/tmp/$base"
-        "$ADB" shell "run-as com.aosmith.type sh -c 'mkdir -p files/models && cp /data/local/tmp/$base files/models/'"
+        "$ADB" shell "run-as co.thingg.type sh -c 'mkdir -p files/models && cp /data/local/tmp/$base files/models/'"
         "$ADB" shell "rm /data/local/tmp/$base"
         echo "model installed: $base"
     else
@@ -29,5 +29,5 @@ if [ -n "$MODEL" ]; then
     fi
 fi
 
-"$ADB" shell am start -n com.aosmith.type/.SettingsActivity
+"$ADB" shell am start -n co.thingg.type/com.aosmith.type.SettingsActivity
 echo "done - Type is the active keyboard"

@@ -9,11 +9,12 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.aosmith.type"
+        // Install identity; the code namespace stays com.aosmith.type.
+        applicationId = "co.thingg.type"
         minSdk = 28
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.5.13"
+        versionCode = 18
+        versionName = "0.6.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
