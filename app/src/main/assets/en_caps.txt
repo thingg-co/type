@@ -734,7 +734,7 @@ zen	Zen
 zeus	Zeus
 zionism	Zionism
 zionist	Zionist
-# Curated given names (tools/curated_words.py): lowercase reading absent or archaic.
+# Curated given names (tools/curated_words.py): the name reading wins over any lowercase one.
 alan	Alan
 alexandra	Alexandra
 alexis	Alexis
@@ -1018,3 +1018,29 @@ yvonne	Yvonne
 zachary	Zachary
 zoe	Zoe
 jeff	Jeff
+amber	Amber
+bobby	Bobby
+crystal	Crystal
+dale	Dale
+graham	Graham
+heather	Heather
+holly	Holly
+hunter	Hunter
+jack	Jack
+jake	Jake
+jasmine	Jasmine
+jay	Jay
+jimmy	Jimmy
+joey	Joey
+josh	Josh
+kelly	Kelly
+lily	Lily
+mark	Mark
+mason	Mason
+mike	Mike
+molly	Molly
+nick	Nick
+randy	Randy
+robin	Robin
+terry	Terry
+victor	Victor

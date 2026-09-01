@@ -30,22 +30,22 @@ class CasingTest {
         for (w in listOf("september", "monday", "january", "english", "london", "christmas")) {
             assertEquals(w.replaceFirstChar { it.uppercaseChar() }, c.canonical(w))
         }
-        // Ambiguous words must stay out: their lowercase readings dominate real text.
-        for (w in listOf("may", "march", "the", "will", "mark")) {
+        // Ambiguous non-name words must stay out: their lowercase readings dominate.
+        for (w in listOf("may", "march", "the", "will")) {
             assertNull("'$w' must not be auto-capitalized", c.canonical(w))
         }
     }
 
-    @Test fun `curated given names are cased, ambiguous ones held out`() {
+    @Test fun `curated given names are cased, ambiguity notwithstanding`() {
         val c = File("src/main/assets/en_caps.txt").inputStream().use(Casing::fromStream)
-        for (w in listOf("jason", "jessica", "michelle", "brandon", "steven", "timothy")) {
+        // Every curated name capitalizes, including those with a live lowercase
+        // reading (mark, jack, holly): a stray capital is a smaller wrong than
+        // leaving someone's name lowercase. See tools/curated_words.py.
+        for (w in listOf(
+                "jason", "jessica", "michelle", "brandon", "steven", "timothy",
+                "mark", "jack", "holly", "hunter", "amber", "robin", "jake",
+            )) {
             assertEquals(w.replaceFirstChar { it.uppercaseChar() }, c.canonical(w))
-        }
-        // Names with a live lowercase reading wait for the cased-vocab retrain
-        // (tools/curated_words.py prints the full holdout list). Corpus-mined entries
-        // (joe, jean) are not held out: measured casing beats judgment.
-        for (w in listOf("mark", "jack", "holly", "hunter", "amber", "robin", "jake")) {
-            assertNull("'$w' must not be auto-capitalized", c.canonical(w))
         }
     }
 

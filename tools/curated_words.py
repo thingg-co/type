@@ -7,22 +7,19 @@ scores them as UNK and they rank last as suggestions: the effect is purely that 
 known-word gate stops "correcting" them. Same append-only contract as expand_vocab.py
 (existing line numbers never move).
 
-Names go to en_caps.txt only when the lowercase form has no current English reading,
-the same rule that keeps may/march out of the mined file. The mechanical filter is the
-lowercase entries of /usr/share/dict/words, but web2 is full of archaic readings
-(benjamin the resin, steven the outcry, timothy the grass) that no one types today, so
-ARCHAIC_OK adds those back, and EXTRA_AMBIGUOUS drops names web2 happens to miss
-(hunter). Names whose lowercase reading is in live use (mark, bill, grace, jack,
-robin, joe) stay out: mid-sentence they must not be capitalized. Names absent from
-en_words.txt are appended there too, else the gate would autocorrect them before
-casing ever ran.
+Every curated name gets a caps entry, including the ones with a live lowercase
+reading (mark, jack, holly): a stray capital in "mark my words" is a smaller wrong
+than leaving someone's name lowercase, so the name reading wins wholesale. When the
+vocabulary grows cased ids, the net can learn to hold the capital back where the
+common-noun reading fits the context. Names absent from en_words.txt are appended
+there too, else the gate would autocorrect them before casing ever ran.
 """
 
 import sys
 
 VOCAB = "app/src/main/assets/en_words.txt"
 CAPS = "app/src/main/assets/en_caps.txt"
-CAPS_MARK = "# Curated given names (tools/curated_words.py): lowercase reading absent or archaic."
+CAPS_MARK = "# Curated given names (tools/curated_words.py): the name reading wins over any lowercase one."
 ID_CAP = 1 << 16  # word ids are stored 16-bit
 
 SLANG = """ahaha ahahaha aww awww bday bestie besties bff bffr bffs brb bruh bruv
@@ -69,25 +66,12 @@ toby todd tom tommy tony tracy travis trevor tristan tyler valerie vanessa veron
 victor victoria vincent virginia vivian walter wayne wendy wesley whitney william
 xavier yvonne zachary zoe""".split()
 
-# web2 lists these lowercase, but the readings are archaic or technical; the name wins.
-ARCHAIC_OK = set("""alan amelia amy ann anna benjamin betty brett carl caroline
-colin donna emma eric harry henry irene jane jeff jenna jenny jerry kim kyle larry laura lori lucy luke madeline
-maria mary morgan nancy peggy phoebe ralph rick riley rita rodney ross ruth sally
-sam seth sophia spencer steven tara ted tiffany timothy toby tommy tony travis
-vincent walter""".split())
-
-# Live lowercase readings web2 misses.
-EXTRA_AMBIGUOUS = {"hunter"}
-
 vocab = [w.rstrip("\n") for w in open(VOCAB, encoding="utf-8")]
 have = set(vocab)
 caps_lines = open(CAPS, encoding="utf-8").read().splitlines()
 caps_have = set(l.split("\t")[0] for l in caps_lines if l and not l.startswith("#") and "\t" in l)
 
-dict_lower = set(w.strip() for w in open("/usr/share/dict/words") if w[:1].islower())
-ambiguous = (set(n for n in NAMES if n in dict_lower) - ARCHAIC_OK) | EXTRA_AMBIGUOUS
-
-cased_names = sorted(set(NAMES) - ambiguous)
+cased_names = sorted(set(NAMES))
 new_words = sorted(set(w for w in SLANG if w not in have)) + [n for n in cased_names if n not in have]
 if len(vocab) + len(new_words) > ID_CAP:
     sys.exit("id space exhausted: %d + %d > %d" % (len(vocab), len(new_words), ID_CAP))
@@ -106,5 +90,4 @@ if new_caps:
             f.write("%s\t%s\n" % (n, n.capitalize()))
 
 print("words appended: %d (vocab now %d)" % (len(new_words), len(vocab) + len(new_words)))
-print("caps entries added: %d, names held out as ambiguous: %d" % (len(new_caps), len(ambiguous)))
-print("ambiguous:", " ".join(sorted(ambiguous)))
+print("caps entries added: %d" % len(new_caps))
