@@ -9,3 +9,5 @@ local.properties
 /captures
 *.gguf
 __pycache__/
+.venv/
+tools/nn/out*/

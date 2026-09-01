@@ -12,7 +12,7 @@ import sys
 
 import numpy as np
 
-SEP = 0xFFFF
+SEP = 0xFFFFFFFF
 K = 3
 
 val_path = sys.argv[1]
@@ -69,7 +69,7 @@ for i, w in enumerate(words):
 for k2 in by_prefix:
     by_prefix[k2] = by_prefix[k2][:8]
 
-stream = np.fromfile(val_path, dtype="<u2").astype(np.int64)
+stream = np.fromfile(val_path, dtype="<u4").astype(np.int64)
 stats = dict(n=0, b1=0, b3=0, n1=0, n3=0, pn=0, pb1=0, pn1=0)
 sent = []
 for t in stream:

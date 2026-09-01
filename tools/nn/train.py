@@ -34,7 +34,7 @@ K = 3  # overridden by --k
 
 
 def load_stream(path):
-    a = np.fromfile(path, dtype="<u2").astype(np.int64)
+    a = np.fromfile(path, dtype="<u4").astype(np.int64)
     return a
 
 
@@ -47,7 +47,7 @@ def windows(stream, V):
     the app's id space unchanged; the export stamps TNW2 so the app knows the signal is
     trained (a TNW1 asset never learned BOS as a target).
     """
-    BOS, UNK, SEP = V - 2, V - 1, 0xFFFF
+    BOS, UNK, SEP = V - 2, V - 1, 0xFFFFFFFF
     ctxs, tgts = [], []
     sent = []
     for t in stream:

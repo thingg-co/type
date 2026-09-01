@@ -3,8 +3,9 @@
 
 Reads the app vocabulary (en_words.txt; ids are line numbers, matching the app), adds two
 specials, BOS = V and UNK = V+1, tokenizes input text into lowercase word tokens, and writes
-train.bin / val.bin as little-endian uint16 streams where 0xFFFF separates sentences.
-Sentences keep only runs with a high in-vocab rate so UNK does not dominate training.
+train.bin / val.bin as little-endian uint32 streams where 0xFFFFFFFF separates sentences
+(uint16 died when the vocabulary passed 64k). Sentences keep only runs with a high
+in-vocab rate so UNK does not dominate training.
 
 usage: prepare_data.py out_dir input.txt [input2.txt ...]
   Tatoeba eng_sentences.tsv (id\tlang\ttext) and plain text (one or more sentences per
@@ -17,7 +18,7 @@ import sys
 
 WORD = re.compile(r"[a-z]+(?:'[a-z]+)?")
 SPLIT = re.compile(r"[.!?\n]+")
-SEP = 0xFFFF
+SEP = 0xFFFFFFFF
 
 out_dir = sys.argv[1]
 args = sys.argv[2:]
@@ -40,7 +41,7 @@ kept = skipped = tokens = 0
 
 def emit(sentence_ids):
     global kept, tokens
-    buf = struct.pack(f"<{len(sentence_ids) + 1}H", *sentence_ids, SEP)
+    buf = struct.pack(f"<{len(sentence_ids) + 1}I", *sentence_ids, SEP)
     (val if random.random() < 0.01 else train).write(buf)
     kept += 1
     tokens += len(sentence_ids)
