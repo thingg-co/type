@@ -60,6 +60,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private var strip: SuggestionStripView? = null
     private var emojiPanel: EmojiPanelView? = null
 
+    /** The padded outer container: carries the nav-bar inset padding and is the nudge target. */
+    private var inputRoot: View? = null
+
     /** Letters of the word under construction (to the left of the cursor). */
     private val word = StringBuilder()
     private var correctionAllowed = true
@@ -180,9 +183,17 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 .getOrDefault(emptyList())
             visibility = View.GONE
         }
-        container.addView(s, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, resources.getDimensionPixelSize(R.dimen.kb_strip_height)))
-        container.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        container.addView(e, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // The suggestion chips float over the top key row instead of reserving a bar of
+        // their own: the keyboard window is exactly the keys, and the pills appear only
+        // when there is something to show. Non-clickable overlay areas pass touches
+        // through to the keys beneath.
+        val stack = android.widget.FrameLayout(this)
+        val inner = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        inner.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        inner.addView(e, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        stack.addView(inner, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+        stack.addView(s, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, resources.getDimensionPixelSize(R.dimen.kb_strip_height)))
+        container.addView(stack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         // With targetSdk 35+ the IME window is edge-to-edge, so the bottom row would sit under the
         // navigation bar unless we pad for it ourselves. Below 35 the inset arrives as zero.
         // The bottom uses the stable (ignoring-visibility) navigation inset too: devices with a
@@ -203,6 +214,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             insets
         }
         ViewCompat.requestApplyInsets(container)
+        inputRoot = container
         strip = s
         keyboardView = k
         emojiPanel = e
@@ -251,7 +263,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 // moment. Cumulative: 350 ms, 750 ms, 1250 ms.
                 for (wait in longArrayOf(350, 400, 500)) {
                     delay(wait)
-                    val root = strip?.parent as? View ?: return@launch
+                    val root = inputRoot ?: return@launch
                     if (!isInputViewShown) return@launch
                     if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-rotation insets nudge")
                     // The root's bottom padding carries the navigation-bar inset:
@@ -338,7 +350,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
      */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
-        val root = strip?.parent as? View
+        val root = inputRoot
         if (com.aosmith.type.BuildConfig.DEBUG) {
             val s = "content=${outInsets.contentTopInsets} visible=${outInsets.visibleTopInsets} " +
                 "touchable=${outInsets.touchableInsets} rootH=${root?.height ?: -1} shown=$isInputViewShown"
@@ -380,10 +392,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         correctionAllowed = suggestionsAllowed && prefs.autocorrect
 
         // Taskbar/nav state can change between shows without a new inset dispatch; ask again.
-        (strip?.parent as? View)?.let { ViewCompat.requestApplyInsets(it) }
+        inputRoot?.let { ViewCompat.requestApplyInsets(it) }
         keyboardView?.layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.SYMBOLS else Layer.LETTERS
         showEmojiPanel(false)
-        strip?.fixEnabled = suggestionsAllowed
         strip?.clear()
         pendingUndo = null
         undoArmed = false

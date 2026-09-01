@@ -13,6 +13,12 @@ sealed class KeyAction {
     /** Opens the emoji panel in place of the key rows. */
     object SwitchEmoji : KeyAction()
 
+    /** Runs the ✨ sentence fix. */
+    object FixSentence : KeyAction()
+
+    /** Rebuilds the IME window (recovery for stuck host-app layouts). */
+    object Unstick : KeyAction()
+
     /** A whole-word key shown during word takeover; commits the word plus a space. */
     data class Word(val word: String) : KeyAction()
 
@@ -27,6 +33,10 @@ class KeySpec(
     val width: Float = 1f,
     val special: Boolean = false,
     val accent: Boolean = false,
+    /** Small second glyph drawn under the label (the ✨ key shows its long-press emoji face). */
+    val subLabel: String = "",
+    /** Fired instead of [action] when the key is held. */
+    val longAction: KeyAction? = null,
 ) {
     val isLetter: Boolean get() = action is KeyAction.Text && action.text.length == 1 && action.text[0].isLetter()
 }
@@ -45,11 +55,12 @@ object KeyboardLayouts {
 
     private val shift = KeySpec("⇧", KeyAction.Shift, 1.5f, special = true)
     private val backspace = KeySpec("⌫", KeyAction.Backspace, 1.5f, special = true)
-    private val enter = KeySpec("↵", KeyAction.Enter, 1.5f, special = true, accent = true)
+    private val enter = KeySpec("↵", KeyAction.Enter, 1.5f, special = true, accent = true, longAction = KeyAction.Unstick)
     private val space = KeySpec("", KeyAction.Space, 5f)
     private val comma = KeySpec(",", KeyAction.Text(","), 1f, special = true)
     private val period = KeySpec(".", KeyAction.Text("."), 1f, special = true)
-    private val emoji = KeySpec("😀", KeyAction.SwitchEmoji, 1f, special = true)
+    // Short press fixes the sentence, holding opens emoji; both faces share the key.
+    private val emoji = KeySpec("✨", KeyAction.FixSentence, 1f, special = true, subLabel = "😀", longAction = KeyAction.SwitchEmoji)
     private val toSymbols = KeySpec("?123", KeyAction.SwitchLayer(Layer.SYMBOLS), 1.5f, special = true)
     private val toSymbols2 = KeySpec("#+=", KeyAction.SwitchLayer(Layer.SYMBOLS2), 1.5f, special = true)
     private val toLetters = KeySpec("ABC", KeyAction.SwitchLayer(Layer.LETTERS), 1.5f, special = true)

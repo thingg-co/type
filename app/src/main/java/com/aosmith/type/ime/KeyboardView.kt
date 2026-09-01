@@ -33,6 +33,8 @@ class KeyboardView @JvmOverloads constructor(
         fun onWordKey(word: String)
         fun onEscapeWordMode()
         fun onEmoji()
+        fun onFixSentence()
+        fun onUnstick()
     }
 
     enum class Shift { OFF, ON, LOCKED }
@@ -129,6 +131,16 @@ class KeyboardView @JvmOverloads constructor(
             fire(k.spec)
             postDelayed(this, REPEAT_INTERVAL_MS)
         }
+    }
+
+    private var longPressKey: KeyBox? = null
+    private var longPressFired = false
+    private val longPressRunnable = Runnable {
+        val k = longPressKey ?: return@Runnable
+        val action = k.spec.longAction ?: return@Runnable
+        longPressFired = true
+        if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        fire(k.spec, action)
     }
 
     init {
@@ -258,8 +270,22 @@ class KeyboardView @JvmOverloads constructor(
                     else -> labelSizeSmall * scale
                 }
                 textPaint.isFakeBoldText = isWordKey || (spec.action == KeyAction.Shift && shift == Shift.LOCKED)
-                val baseline = cy - (textPaint.descent() + textPaint.ascent()) / 2f
-                canvas.drawText(label, cx, baseline, textPaint)
+                if (spec.subLabel.isEmpty()) {
+                    val baseline = cy - (textPaint.descent() + textPaint.ascent()) / 2f
+                    canvas.drawText(label, cx, baseline, textPaint)
+                } else {
+                    // Stacked faces (✨ over 😀): main glyph in the upper half, the
+                    // long-press face smaller beneath it.
+                    val mainY = tmpRect.top + tmpRect.height() * 0.40f -
+                        (textPaint.descent() + textPaint.ascent()) / 2f
+                    canvas.drawText(label, cx, mainY, textPaint)
+                    val mainSize = textPaint.textSize
+                    textPaint.textSize = mainSize * 0.62f
+                    val subY = tmpRect.top + tmpRect.height() * 0.78f -
+                        (textPaint.descent() + textPaint.ascent()) / 2f
+                    canvas.drawText(spec.subLabel, cx, subY, textPaint)
+                    textPaint.textSize = mainSize
+                }
                 if (spec.action == KeyAction.Shift && shift == Shift.LOCKED) {
                     canvas.drawRect(cx - 6 * dp, tmpRect.bottom - 7 * dp, cx + 6 * dp, tmpRect.bottom - 5 * dp, textPaint)
                 }
@@ -349,6 +375,11 @@ class KeyboardView @JvmOverloads constructor(
                     repeatFired = false
                     postDelayed(repeatRunnable, REPEAT_DELAY_MS)
                 }
+                if (box.spec.longAction != null) {
+                    longPressKey = box
+                    longPressFired = false
+                    postDelayed(longPressRunnable, LONG_PRESS_MS)
+                }
                 invalidate()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
@@ -356,6 +387,15 @@ class KeyboardView @JvmOverloads constructor(
                 val id = event.getPointerId(index)
                 val down = pressed.remove(id)
                 if (down != null) {
+                    if (down === longPressKey) {
+                        removeCallbacks(longPressRunnable)
+                        val firedLong = longPressFired
+                        longPressKey = null
+                        if (firedLong) {
+                            invalidate()
+                            return true
+                        }
+                    }
                     if (down.spec.action == KeyAction.Backspace) {
                         removeCallbacks(repeatRunnable)
                         val fired = repeatFired
@@ -374,6 +414,8 @@ class KeyboardView @JvmOverloads constructor(
                 pressed.clear()
                 removeCallbacks(repeatRunnable)
                 repeatKey = null
+                removeCallbacks(longPressRunnable)
+                longPressKey = null
                 invalidate()
             }
         }
@@ -381,7 +423,11 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun fire(spec: KeySpec) {
-        when (val action = spec.action) {
+        fire(spec, spec.action)
+    }
+
+    private fun fire(spec: KeySpec, fired: KeyAction) {
+        when (val action = fired) {
             is KeyAction.Text -> {
                 val text = if (shift != Shift.OFF && spec.isLetter) action.text.uppercase() else action.text
                 listener?.onText(text)
@@ -407,6 +453,8 @@ class KeyboardView @JvmOverloads constructor(
             is KeyAction.Word -> listener?.onWordKey(action.word)
             KeyAction.EscapeWords -> listener?.onEscapeWordMode()
             KeyAction.SwitchEmoji -> listener?.onEmoji()
+            KeyAction.FixSentence -> listener?.onFixSentence()
+            KeyAction.Unstick -> listener?.onUnstick()
         }
     }
 
@@ -414,5 +462,6 @@ class KeyboardView @JvmOverloads constructor(
         private const val REPEAT_DELAY_MS = 400L
         private const val REPEAT_INTERVAL_MS = 45L
         private const val DOUBLE_TAP_MS = 350L
+        private const val LONG_PRESS_MS = 350L
     }
 }
