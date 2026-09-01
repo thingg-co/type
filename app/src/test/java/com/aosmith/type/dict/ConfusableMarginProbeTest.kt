@@ -112,10 +112,10 @@ class ConfusableMarginProbeTest {
     }
 
     @Test fun `directed overrides hold their calibrated values`() {
-        // its -> it's earns a lower bar (measured FP 0/83 at 5.0, catch 77.9%); id -> i'd
-        // a raised one (bare ID is real chat usage the prose corpus barely samples).
-        assertEquals(5.0f, Confusables.lookbackMargin("its", "it's"))
-        assertEquals(8.0f, Confusables.lookbackMargin("id", "i'd"))
+        // its -> it's earns a lower bar (measured FP 0/83 at 3.0 on the 126k net);
+        // id -> i'd a raised one (bare ID is real chat usage the corpus barely samples).
+        assertEquals(3.0f, Confusables.lookbackMargin("its", "it's"))
+        assertEquals(6.0f, Confusables.lookbackMargin("id", "i'd"))
         // Unlisted directions fall back to the global.
         assertEquals(Confusables.LOOKBACK_MARGIN, Confusables.lookbackMargin("your", "you're"))
         assertEquals(Confusables.LOOKBACK_MARGIN, Confusables.lookbackMargin("it's", "its"))

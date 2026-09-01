@@ -23,7 +23,7 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   prefix is decoded once (`setPrefix`) and rolled back per request (`llama_memory_seq_rm`),
   which is what makes corrections fast. Single-word output is GBNF-constrained.
 - `llm/` - `SpellLlm` (modes, prefix split via chat template, output validation), `Prompts`.
-- `dict/` - 64k-word frequency list + trie (assets/en_words.txt): known-word gate,
+- `dict/` - 126k-word frequency list + trie (assets/en_words.txt): known-word gate,
   keyboard-weighted (KeyNeighbors) bounded edit-distance suggestions, adaptive-key weights;
   Contractions auto-apostrophizes bare forms before the known-word gate; Confusables lists
   swappable words (then/than, there/their/they're) whose margins the prediction network
@@ -34,8 +34,11 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   tools/build_bigrams.py) as fallback; `Personalizer` learns sparse per-user deltas over the
   frozen network (state in files/personal.bin, shape-checked); `TypingPolicy` combines them.
   Word ids in BOTH binary
-  assets are en_words.txt line numbers: changing the word list requires rebuilding the
-  bigram table AND retraining the network.
+  assets are en_words.txt line numbers and expansion is append-only (ids never move,
+  tools/expand_vocab.py / tools/curated_words.py). The network is trained on the full
+  126k list; the bigram table packs 16-bit ids, so words past line 65536 simply have
+  no bigrams (Bigrams.kt guards the range). Reordering or shrinking the list still
+  means rebuilding both assets together.
 - `ime/` - `TypeInputMethodService` (word tracking, boundary autocorrect with undo, sentence
   fix), `KeyboardView` (Canvas-drawn, adaptive keys), `SuggestionStripView`, `KeyboardLayouts`.
 - `model/` - catalog (chosen from eval results in tools/eval.py; don't swap models without

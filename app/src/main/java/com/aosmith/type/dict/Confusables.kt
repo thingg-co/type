@@ -37,47 +37,47 @@ object Confusables {
      * applied outright; between [MODEL_MARGIN] and [DIRECT_MARGIN] the language model
      * decides; below, the word is left alone.
      *
-     * Calibrated on two corpora through the shipped network: held-out conversational
-     * sentences (the keyboard's domain) and book prose (out of domain, pessimistic).
-     * DIRECT at 6.0: 0.14% false flips / 58% catch conversational, 0.59% / 31% books.
+     * Calibrated for the 126k-vocabulary network (2026-09-01, Tatoeba held-out cases,
+     * ~0.25% false-positive budget). DIRECT at 4.0: 0.18% false flips / 52% catch.
      */
-    const val DIRECT_MARGIN = 6.0f
-    const val MODEL_MARGIN = 3.0f
+    const val DIRECT_MARGIN = 4.0f
+    const val MODEL_MARGIN = 2.0f
 
     /**
      * Margin for reconsidering the previous word once the word after it is known
      * ("your welcome": at "welcome", score P(variant|ctx) + P(welcome|ctx,variant)).
-     * Two log-prob terms, and the pass where the real signal lives: at 6.0 it is
-     * 0.10% false flips / 85% catch conversational, 0.67% / 58% books. No model
-     * fallback here; the word prompt cannot ask about an earlier word.
+     * Two log-prob terms, and the pass where the real signal lives: at 5.0 the new
+     * network measures 0.23% false flips / 75% catch. No model fallback here; the
+     * word prompt cannot ask about an earlier word.
      */
-    const val LOOKBACK_MARGIN = 6.0f
+    const val LOOKBACK_MARGIN = 5.0f
 
     /**
      * Send-time margins (enter that may dispatch the message): the totals gain the
-     * trained end-of-message term, and there is no undo once sent, so the lookback
-     * bar sits higher. Forward+EOS at 6.0 measured zero false flips on both corpora
-     * (96% catch conversational); lookback+EOS at 8.0 is 0.17% / 82% conversational.
+     * trained end-of-message term, and there is no undo once sent, so the bars stay
+     * strict. Forward+EOS at 6.0: 0.09% false flips / 83% catch; lookback+EOS at
+     * 6.0: 0.09% / 80% (the new network's EOS term is sharp enough that 8.0 would
+     * cost most of the catch for no measured safety).
      */
     const val SEND_FORWARD_MARGIN = 6.0f
-    const val SEND_LOOKBACK_MARGIN = 8.0f
+    const val SEND_LOOKBACK_MARGIN = 6.0f
 
     /**
      * Directed per-pair lookback overrides, measured like the globals (Tatoeba
      * 2026-09-01 run, 500 cases per set per label):
      *
-     * its -> it's at 5.0: FP 0/83, catch 77.9% (the global 6.0 catches only 57.8%).
-     * The prior is real — typed "its" is usually a meant "it's" — and the lookback
-     * pass is where the sentence decides it, so this pair earns a lower bar.
+     * its -> it's at 3.0: FP 0/83 with 79% catch on the 126k network (the global 5.0
+     * catches only 50%). The prior is real — typed "its" is usually a meant "it's" —
+     * and the lookback pass is where the sentence decides it.
      *
-     * id -> i'd at 8.0: bare "id" is legitimately ID in chat and the prose corpus
-     * barely samples it (3 correct rows), so eagerness cannot be justified; the
-     * raised bar still catches 98.2% because the net is near-certain in real I'd
-     * contexts ("id love to"). The acronym's casing itself waits for cased vocab ids.
+     * id -> i'd at 6.0: bare "id" is legitimately ID in chat and the prose corpus
+     * barely samples it, so the bar stays above the global; the new network cliffs
+     * past 6.0 (94% catch there, 14% at 8.0, zero measured FP at either). The
+     * acronym's casing itself waits for cased vocab ids.
      */
     private val LOOKBACK_OVERRIDES = mapOf(
-        ("its" to "it's") to 5.0f,
-        ("id" to "i'd") to 8.0f,
+        ("its" to "it's") to 3.0f,
+        ("id" to "i'd") to 6.0f,
     )
 
     /** The lookback bar for flipping [typed] to [alt]; the global unless measured otherwise. */
