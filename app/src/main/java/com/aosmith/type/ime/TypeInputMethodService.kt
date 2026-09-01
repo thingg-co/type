@@ -231,14 +231,31 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // negotiation every time. One extra tap after rotating is a better deal than
         // typing into an input pinned off-screen. No auto-reshow — racing the rotation
         // animation with a show is how the 0.5.7 bounce re-latched what it had cured.
-        // Deliberately nothing else here. Every automatic intervention tried against the
-        // rotate-under-keyboard latch (hide requests, refusing restores, show
-        // quarantines, scheduled window rebuilds) either got overridden, stranded the
-        // keyboard, or corrupted the host app's layout worse than the latch itself —
-        // each one measured live on the T807D, where Gboard and FUTO latch identically.
-        // The keyboard rides the rotation exactly like stock, and recovery is the
-        // user's: long-press ✨ (window rebuild) or a close/reopen of the field.
+        // The one automatic intervention that survives review, because it cannot fail
+        // into anything: after the rotation settles, grow the window by one pixel for
+        // one frame and shrink it back. An app goes stale by missing the mid-rotation
+        // insets dispatch and then never hearing another (steady state = no dispatch);
+        // a frame change is the trigger the system always delivers, so the nudge hands
+        // the app two fresh dispatches with true geometry. No show/hide state machine,
+        // no window rebuild — the previous attempts down those roads each stranded the
+        // keyboard or corrupted layouts worse than the latch (see git history around
+        // 0.6.2-0.6.6). Worst case here is an invisible 1 px resize that changes
+        // nothing. Manual recovery for anything residual: long-press ✨.
+        if (rotated && wasShown) {
+            nudgeJob?.cancel()
+            nudgeJob = mainScope.launch {
+                delay(POST_ROTATION_NUDGE_MS)
+                val root = strip?.parent as? View ?: return@launch
+                if (!isInputViewShown) return@launch
+                if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-rotation insets nudge")
+                root.setPadding(0, 0, 0, 1)
+                delay(50) // one relayout and insets dispatch at the nudged frame
+                root.setPadding(0, 0, 0, 0)
+            }
+        }
     }
+
+    private var nudgeJob: kotlinx.coroutines.Job? = null
 
     // ---- window lifecycle instrumentation (debug builds only) ------------------------
     // Chasing the stuck-surface bug: system marks the IME hidden while the window stays
@@ -1162,6 +1179,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     companion object {
         private const val TAG = "TypeIME"
+        private const val POST_ROTATION_NUDGE_MS = 1000L
         private const val LIVE_DEBOUNCE_MS = 350L
         private const val DOUBLE_SPACE_MS = 500L
 
