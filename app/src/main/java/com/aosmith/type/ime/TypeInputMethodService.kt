@@ -223,8 +223,8 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // apps we do exactly that automatically after rotation. A rapid bounce does NOT
         // work (an 80 ms gap lands inside the animation being interrupted; tried); the
         // hide must settle before the fresh show.
-        if (wasShown && currentInputEditorInfo?.packageName in ROTATION_BOUNCE_PACKAGES) {
-            pendingRotationBounce = true
+        if (wasShown && currentInputEditorInfo?.packageName in INSET_BOUNCE_PACKAGES) {
+            pendingInsetBounce = true
         }
     }
 
@@ -237,25 +237,33 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private var lastGoodContentTop = -1
     private var lastGoodVisibleTop = -1
 
-    private var pendingRotationBounce = false
+    private var pendingInsetBounce = false
+    private var shownSinceHidden = false
+    private var lastFieldKey = 0L
 
     override fun onWindowShown() {
         super.onWindowShown()
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowShown")
-        if (pendingRotationBounce) {
-            pendingRotationBounce = false
-            mainScope.launch {
-                delay(250)
-                if (!isInputViewShown) return@launch
-                requestHideSelf(0)
-                delay(400) // the app must settle into keyboard-hidden layout first
-                requestShowSelf(0)
-            }
+        shownSinceHidden = true
+        if (pendingInsetBounce) {
+            pendingInsetBounce = false
+            scheduleSettledBounce()
+        }
+    }
+
+    private fun scheduleSettledBounce() {
+        mainScope.launch {
+            delay(250)
+            if (!isInputViewShown) return@launch
+            requestHideSelf(0)
+            delay(400) // the app must settle into keyboard-hidden layout first
+            requestShowSelf(0)
         }
     }
 
     override fun onWindowHidden() {
         super.onWindowHidden()
+        shownSinceHidden = false
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowHidden")
     }
 
@@ -292,6 +300,22 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Second arm point for the inset-latch shim (see INSET_BOUNCE_PACKAGES): input
+        // moved to a different field while the keyboard never hid. That is the shape of
+        // Signal's media-send caption (conversation -> attach -> caption, keyboard up
+        // throughout): the new activity laid out without ever seeing settled
+        // keyboard-hidden geometry and latches stale insets, hiding the caption bar
+        // behind the keyboard. A same-window field switch also matches and blinks once;
+        // compat-listed apps only.
+        val fieldKey = (info.packageName?.hashCode()?.toLong() ?: 0L) shl 32 or
+            (info.fieldId.toLong() and 0xffffffffL)
+        if (!restarting && shownSinceHidden && fieldKey != lastFieldKey &&
+            info.packageName in INSET_BOUNCE_PACKAGES
+        ) {
+            // The window may already be shown (no onWindowShown coming): bounce now.
+            if (isInputViewShown) scheduleSettledBounce() else pendingInsetBounce = true
+        }
+        lastFieldKey = fieldKey
         val inputType = info.inputType
         val cls = inputType and InputType.TYPE_MASK_CLASS
         val variation = inputType and InputType.TYPE_MASK_VARIATION
@@ -1151,11 +1175,12 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         private const val SLIP_MARGIN = 1.0f
 
         /**
-         * Apps that latch stale IME insets when rotation interrupts the insets
-         * animation (content then hides behind the keyboard until a close/reopen).
-         * For these, rotation triggers the settled hide/show bounce above. Verified
+         * Apps that latch stale IME insets when a layout transition happens under a
+         * continuously shown keyboard (content then hides behind the keyboard until a
+         * close/reopen): rotation, and window changes like Signal's media-send caption.
+         * For these, either trigger arms the settled hide/show bounce above. Verified
          * against Gboard: the underlying bug is theirs/the OEM's, this is a shim.
          */
-        private val ROTATION_BOUNCE_PACKAGES = setOf("org.thoughtcrime.securesms")
+        private val INSET_BOUNCE_PACKAGES = setOf("org.thoughtcrime.securesms")
     }
 }
