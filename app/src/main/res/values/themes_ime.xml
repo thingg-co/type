@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The IME window spans the full screen with the keyboard bottom-pinned inside it
+         (the AOSP LatinIME architecture; see updateSoftInputWindowLayoutParameters).
+         Everything above the keyboard must stay transparent. -->
+    <style name="Theme.Type.Ime" parent="@android:style/Theme.DeviceDefault.InputMethod">
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+</resources>

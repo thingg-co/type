@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
 import android.util.Log
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -95,6 +96,13 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     /** True when this field and the settings allow learning from what the user does. */
     private fun learningAllowed(): Boolean = prefs.learnFromTyping && suggestionsAllowed && !noLearning
+
+    init {
+        // InputMethodService.setTheme must run before onCreate (framework requirement:
+        // the SoftInputWindow is built from mTheme). The theme keeps the full-height
+        // window transparent above the keyboard.
+        setTheme(R.style.Theme_Type_Ime)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -229,6 +237,55 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     override fun onWindowShown() {
         super.onWindowShown()
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowShown")
+        updateSoftInputWindowLayoutParameters()
+    }
+
+    override fun setInputView(view: View) {
+        super.setInputView(view)
+        updateSoftInputWindowLayoutParameters()
+    }
+
+    override fun updateFullscreenMode() {
+        super.updateFullscreenMode()
+        updateSoftInputWindowLayoutParameters()
+    }
+
+    /**
+     * Expand the SoftInputWindow to the entire screen and pin the input area (and our
+     * view inside it) to its bottom — the AOSP LatinIME window shape that pairs with
+     * the explicit insets in [onComputeInsets]. IMS's own layout leaves the window
+     * keyboard-sized; see the class comment on onComputeInsets for why that shape is
+     * fragile across rotations.
+     */
+    private fun updateSoftInputWindowLayoutParameters() {
+        val w = window?.window ?: return
+        val attrs = w.attributes
+        if (attrs.height != android.view.WindowManager.LayoutParams.MATCH_PARENT) {
+            attrs.height = android.view.WindowManager.LayoutParams.MATCH_PARENT
+            w.attributes = attrs
+        }
+        val inputArea = w.findViewById<View>(android.R.id.inputArea) ?: return
+        inputArea.layoutParams?.let { lp ->
+            var changed = false
+            if (lp.height != android.view.ViewGroup.LayoutParams.MATCH_PARENT) {
+                lp.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                changed = true
+            }
+            (lp as? android.widget.LinearLayout.LayoutParams)?.let { lin ->
+                if (lin.gravity != Gravity.BOTTOM) {
+                    lin.gravity = Gravity.BOTTOM
+                    changed = true
+                }
+            }
+            if (changed) inputArea.layoutParams = lp
+        }
+        val root = strip?.parent as? View ?: return
+        (root.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            if (lp.gravity != Gravity.BOTTOM) {
+                lp.gravity = Gravity.BOTTOM
+                root.layoutParams = lp
+            }
+        }
     }
 
     /**
@@ -267,14 +324,26 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowHidden")
     }
 
+    /**
+     * The window spans the whole screen and the keyboard is bottom-pinned inside it, so
+     * these insets are the authoritative statement of where the keyboard begins — the
+     * AOSP LatinIME / FUTO architecture. A keyboard-sized window with zero insets leaves
+     * the app's layout at the mercy of the window manager propagating the IME frame
+     * after rotation; that propagation is precisely what broke (Signal on TCL and
+     * Pixel, Gboard too, while FUTO — full-height with explicit insets — never did).
+     * Reporting the keyboard top on every pass forces a fresh insets dispatch to the
+     * app whenever anything about our layout changes.
+     */
     override fun onComputeInsets(outInsets: Insets) {
-        // Deliberately plain: the framework's own computation, unmodified. A "protective
-        // guard" here used to substitute remembered values for transient zeros; on the
-        // T807D its assumptions could not be confirmed against the logs, and a keyboard
-        // that second-guesses its own geometry is one more suspect in every inset bug.
-        // Logging stays (debug builds) — it is how the stuck-surface state was mapped.
         super.onComputeInsets(outInsets)
         val root = strip?.parent as? View
+        if (isInputViewShown && root != null && root.height > 0) {
+            val loc = IntArray(2)
+            root.getLocationInWindow(loc)
+            outInsets.contentTopInsets = loc[1]
+            outInsets.visibleTopInsets = loc[1]
+            outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
+        }
         if (com.aosmith.type.BuildConfig.DEBUG) {
             val s = "content=${outInsets.contentTopInsets} visible=${outInsets.visibleTopInsets} " +
                 "touchable=${outInsets.touchableInsets} rootH=${root?.height ?: -1} shown=$isInputViewShown"
