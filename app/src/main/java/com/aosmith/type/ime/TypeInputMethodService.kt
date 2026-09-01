@@ -260,6 +260,9 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                     delay(50) // one relayout and insets dispatch at the nudged frame
                 } finally {
                     root.setPadding(l, t, r, b)
+                    // If a real insets dispatch landed mid-nudge, the captured padding
+                    // is stale: have the listener reassert the authoritative value.
+                    androidx.core.view.ViewCompat.requestApplyInsets(root)
                 }
             }
         }
