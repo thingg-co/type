@@ -225,8 +225,6 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     // into a timeline: what we were asked, when, and what insets we reported.
 
     private var lastLoggedInsets = ""
-    private var lastGoodContentTop = -1
-    private var lastGoodVisibleTop = -1
 
     override fun onWindowShown() {
         super.onWindowShown()
@@ -270,26 +268,13 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     }
 
     override fun onComputeInsets(outInsets: Insets) {
+        // Deliberately plain: the framework's own computation, unmodified. A "protective
+        // guard" here used to substitute remembered values for transient zeros; on the
+        // T807D its assumptions could not be confirmed against the logs, and a keyboard
+        // that second-guesses its own geometry is one more suspect in every inset bug.
+        // Logging stays (debug builds) — it is how the stuck-surface state was mapped.
         super.onComputeInsets(outInsets)
-        // Protective guard for devices whose IME window spans more than the keyboard:
-        // there, zero top-insets while shown would tell the app the keyboard occupies
-        // nothing. On keyboard-sized windows (T807D) zero is the normal geometry and
-        // this never engages — the rotate-and-back inset latch on that device is a
-        // window-manager animation issue, handled in onConfigurationChanged instead.
         val root = strip?.parent as? View
-        if (isInputViewShown) {
-            val degenerate = root == null || root.height == 0 ||
-                (outInsets.contentTopInsets == 0 && outInsets.visibleTopInsets == 0)
-            if (degenerate) {
-                if (lastGoodContentTop >= 0) {
-                    outInsets.contentTopInsets = lastGoodContentTop
-                    outInsets.visibleTopInsets = lastGoodVisibleTop
-                }
-            } else {
-                lastGoodContentTop = outInsets.contentTopInsets
-                lastGoodVisibleTop = outInsets.visibleTopInsets
-            }
-        }
         if (com.aosmith.type.BuildConfig.DEBUG) {
             val s = "content=${outInsets.contentTopInsets} visible=${outInsets.visibleTopInsets} " +
                 "touchable=${outInsets.touchableInsets} rootH=${root?.height ?: -1} shown=$isInputViewShown"
