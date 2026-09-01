@@ -217,18 +217,6 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             Log.d(TAG, "onConfigurationChanged orientation=${newConfig.orientation} wasShown=$wasShown")
         }
         super.onConfigurationChanged(newConfig)
-        // The rotate-and-back overlap (app lays out full height behind the visible
-        // keyboard) is an OEM/app inset bug — Gboard reproduces it identically — but a
-        // user-paced close/reopen of the keyboard recovers it, so for the known-affected
-        // apps we do exactly that automatically after rotation. A rapid bounce does NOT
-        // work (an 80 ms gap lands inside the animation being interrupted; tried); the
-        // hide must settle before the fresh show.
-        if (wasShown && currentInputEditorInfo?.packageName in INSET_BOUNCE_PACKAGES) {
-            // Restart the quiet period even if a bounce is already in flight: a second
-            // rotation must never let the first bounce fire mid-animation.
-            pendingInsetBounce = true
-            bounceJob?.cancel()
-        }
     }
 
     // ---- window lifecycle instrumentation (debug builds only) ------------------------
@@ -240,43 +228,44 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private var lastGoodContentTop = -1
     private var lastGoodVisibleTop = -1
 
-    private var pendingInsetBounce = false
-    private var shownSinceHidden = false
-    private var lastFieldKey = 0L
-    private var bounceJob: kotlinx.coroutines.Job? = null
-
     override fun onWindowShown() {
         super.onWindowShown()
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowShown")
-        shownSinceHidden = true
-        if (pendingInsetBounce) {
-            pendingInsetBounce = false
-            scheduleSettledBounce()
-        }
     }
 
     /**
-     * At most one bounce is ever in flight, and every new trigger restarts its quiet
-     * period. A rotate-and-back within a second used to schedule two overlapping
-     * bounces whose hide landed inside the second rotation's insets animation — the
-     * exact interruption that latches the app (seen live on T807D/Signal, 0.5.7).
-     * Cancelling and rescheduling turns any burst of triggers into one bounce that
-     * runs only after the window has been quiet for the full delay.
+     * Recovery for the OEM stuck-surface state, on the user's explicit long-press of ✨.
+     *
+     * The failure (T807D/TCL, Signal, Gboard reproduces it): WindowManager holds the IME
+     * window with mHasSurface=true but isReadyForDisplay()=false and the given insets
+     * dropped to zero, so the app is told there is no keyboard while the stale surface
+     * keeps painting over it. That state survives the framework hide/show path
+     * (requestHideSelf/requestShowSelf reuse the same window), which is why the
+     * automatic bounce shims failed — one even re-latched the app it had just cured.
+     * Dismissing the dialog removes the window from WM entirely; the following show
+     * re-adds it as a brand-new window with fresh readiness and insets registration.
      */
-    private fun scheduleSettledBounce() {
-        bounceJob?.cancel()
-        bounceJob = mainScope.launch {
-            delay(600)
-            if (!isInputViewShown) return@launch
-            requestHideSelf(0)
-            delay(500) // the app must settle into keyboard-hidden layout first
-            requestShowSelf(0)
+    override fun onUnstick() {
+        if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onUnstick: rebuilding IME window")
+        val w = window ?: return
+        mainScope.launch {
+            try {
+                w.dismiss()
+            } catch (e: Exception) {
+                Log.w(TAG, "onUnstick dismiss failed", e)
+            }
+            delay(250) // let WM finish removing the old window
+            try {
+                w.show()
+            } catch (e: Exception) {
+                Log.w(TAG, "onUnstick show failed", e)
+            }
+            requestShowSelf(0) // resync the framework's show state
         }
     }
 
     override fun onWindowHidden() {
         super.onWindowHidden()
-        shownSinceHidden = false
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowHidden")
     }
 
@@ -313,22 +302,6 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        // Second arm point for the inset-latch shim (see INSET_BOUNCE_PACKAGES): input
-        // moved to a different field while the keyboard never hid. That is the shape of
-        // Signal's media-send caption (conversation -> attach -> caption, keyboard up
-        // throughout): the new activity laid out without ever seeing settled
-        // keyboard-hidden geometry and latches stale insets, hiding the caption bar
-        // behind the keyboard. A same-window field switch also matches and blinks once;
-        // compat-listed apps only.
-        val fieldKey = (info.packageName?.hashCode()?.toLong() ?: 0L) shl 32 or
-            (info.fieldId.toLong() and 0xffffffffL)
-        if (!restarting && shownSinceHidden && fieldKey != lastFieldKey &&
-            info.packageName in INSET_BOUNCE_PACKAGES
-        ) {
-            // The window may already be shown (no onWindowShown coming): bounce now.
-            if (isInputViewShown) scheduleSettledBounce() else pendingInsetBounce = true
-        }
-        lastFieldKey = fieldKey
         val inputType = info.inputType
         val cls = inputType and InputType.TYPE_MASK_CLASS
         val variation = inputType and InputType.TYPE_MASK_VARIATION
@@ -1187,13 +1160,11 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
          */
         private const val SLIP_MARGIN = 1.0f
 
-        /**
-         * Apps that latch stale IME insets when a layout transition happens under a
-         * continuously shown keyboard (content then hides behind the keyboard until a
-         * close/reopen): rotation, and window changes like Signal's media-send caption.
-         * For these, either trigger arms the settled hide/show bounce above. Verified
-         * against Gboard: the underlying bug is theirs/the OEM's, this is a shim.
-         */
-        private val INSET_BOUNCE_PACKAGES = setOf("org.thoughtcrime.securesms")
+        // Automatic bounce shims for the stuck-surface state were tried across
+        // 0.5.5-0.5.9 (rotation-armed, then cross-field-armed, then quiet-period
+        // debounced) and are deliberately gone: the state lives in the OEM's
+        // WindowManager (see onUnstick), can engage on a plain keyboard open, survives
+        // framework hide/show, and an automatic bounce both re-latched apps and raced
+        // the user's own recovery. Recovery is the explicit long-press on ✨.
     }
 }

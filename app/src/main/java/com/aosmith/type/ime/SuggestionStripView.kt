@@ -24,6 +24,9 @@ class SuggestionStripView @JvmOverloads constructor(
         fun onSuggestionPicked(text: String, isTypedWord: Boolean)
         fun onFixSentence()
         fun onUndo()
+
+        /** Long-press on ✨: rebuild the IME window (recovery for the OEM stuck-surface state). */
+        fun onUnstick()
     }
 
     data class Suggestion(val text: String, val fromModel: Boolean = false, val isTypedWord: Boolean = false)
@@ -41,6 +44,11 @@ class SuggestionStripView @JvmOverloads constructor(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
         layoutParams = LayoutParams((48 * dp).toInt(), LayoutParams.MATCH_PARENT)
         setOnClickListener { listener?.onFixSentence() }
+        setOnLongClickListener {
+            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            listener?.onUnstick()
+            true
+        }
         contentDescription = context.getString(R.string.strip_fix)
     }
     private val chips: List<TextView> = List(3) {
