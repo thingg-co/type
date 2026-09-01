@@ -377,9 +377,24 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (isInputViewShown && root != null && root.height > 0) {
             val loc = IntArray(2)
             root.getLocationInWindow(loc)
-            outInsets.contentTopInsets = loc[1]
-            outInsets.visibleTopInsets = loc[1]
-            outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
+            if (loc[1] > 0) {
+                outInsets.contentTopInsets = loc[1]
+                outInsets.visibleTopInsets = loc[1]
+                outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
+            } else {
+                // Pre-layout transient (mid-rebuild, mid-rotation): the root is not
+                // positioned yet, and a bottom-pinned keyboard can never truly start at
+                // y=0 on a full-height window — reporting that tells the app the
+                // keyboard covers the whole screen, which Signal renders as a white
+                // void with its compose bar at the top (observed on 0.6.5). Claim
+                // nothing instead until real geometry exists.
+                val h = window?.window?.decorView?.height ?: 0
+                if (h > 0) {
+                    outInsets.contentTopInsets = h
+                    outInsets.visibleTopInsets = h
+                    outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_VISIBLE
+                }
+            }
         }
         if (com.aosmith.type.BuildConfig.DEBUG) {
             val s = "content=${outInsets.contentTopInsets} visible=${outInsets.visibleTopInsets} " +
