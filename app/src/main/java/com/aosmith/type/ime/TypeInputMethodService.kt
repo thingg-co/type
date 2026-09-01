@@ -244,25 +244,32 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (rotated && wasShown) {
             nudgeJob?.cancel()
             nudgeJob = mainScope.launch {
-                delay(POST_ROTATION_NUDGE_MS)
-                val root = strip?.parent as? View ?: return@launch
-                if (!isInputViewShown) return@launch
-                if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-rotation insets nudge")
-                // The root's bottom padding carries the navigation-bar inset: nudge
-                // relative to it and restore it exactly, never overwrite it (0.6.8
-                // zeroed it and dropped the keyboard under the gesture area).
-                val l = root.paddingLeft
-                val t = root.paddingTop
-                val r = root.paddingRight
-                val b = root.paddingBottom
-                root.setPadding(l, t, r, b + 1)
-                try {
-                    delay(50) // one relayout and insets dispatch at the nudged frame
-                } finally {
-                    root.setPadding(l, t, r, b)
-                    // If a real insets dispatch landed mid-nudge, the captured padding
-                    // is stale: have the listener reassert the authoritative value.
-                    androidx.core.view.ViewCompat.requestApplyInsets(root)
+                // A ramp instead of one fixed wait: the app's own post-rotation
+                // relayout lands anywhere from ~300 to ~900 ms, and a nudge is free
+                // (invisible 1 px, no state-machine contact), so fire early for fast
+                // settles and again after slow ones rather than guessing a single
+                // moment. Cumulative: 350 ms, 750 ms, 1250 ms.
+                for (wait in longArrayOf(350, 400, 500)) {
+                    delay(wait)
+                    val root = strip?.parent as? View ?: return@launch
+                    if (!isInputViewShown) return@launch
+                    if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-rotation insets nudge")
+                    // The root's bottom padding carries the navigation-bar inset:
+                    // nudge relative to it and restore it exactly, never overwrite it
+                    // (0.6.8 zeroed it and dropped the keyboard under the taskbar).
+                    val l = root.paddingLeft
+                    val t = root.paddingTop
+                    val r = root.paddingRight
+                    val b = root.paddingBottom
+                    root.setPadding(l, t, r, b + 1)
+                    try {
+                        delay(50) // one relayout and insets dispatch at the nudged frame
+                    } finally {
+                        root.setPadding(l, t, r, b)
+                        // If a real insets dispatch landed mid-nudge, the captured
+                        // padding is stale: let the listener reassert the live value.
+                        androidx.core.view.ViewCompat.requestApplyInsets(root)
+                    }
                 }
             }
         }
@@ -1192,7 +1199,6 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     companion object {
         private const val TAG = "TypeIME"
-        private const val POST_ROTATION_NUDGE_MS = 1000L
         private const val LIVE_DEBOUNCE_MS = 350L
         private const val DOUBLE_SPACE_MS = 500L
 
