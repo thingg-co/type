@@ -239,50 +239,28 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // negotiation every time. One extra tap after rotating is a better deal than
         // typing into an input pinned off-screen. No auto-reshow — racing the rotation
         // animation with a show is how the 0.5.7 bounce re-latched what it had cured.
+        // Interfering with the show/hide state machine is a dead end, all three variants
+        // measured: a requestHideSelf here is overridden by the system restore ~700 ms
+        // later; refusing the restore is bypassed by the app's own unmarked re-request;
+        // refusing everything for a quarantine strands the keyboard (the input manager
+        // dedups refused requests, so later taps produce no request at all, and even our
+        // own requestShowSelf afterwards is dropped). So let every show land, and repair
+        // instead: one window rebuild after the layout has settled — the dismiss+show
+        // path bypasses that state machine entirely and is the one operation verified to
+        // fix the latched geometry in place (it is what the ✨ long-press does).
         if (rotated && wasShown) {
-            refuseShowsUntil = android.os.SystemClock.uptimeMillis() + SHOW_QUARANTINE_MS
-            refusedAppShow = false
-            requestHideSelf(0)
-            reshowJob?.cancel()
-            reshowJob = mainScope.launch {
-                delay(SHOW_QUARANTINE_MS + 100)
-                // The app asked for the keyboard during the quarantine and was told no,
-                // and after a refusal the input manager dedups identical requests, so a
-                // later tap on the already-focused field produces no new request at all
-                // (observed: four refused shows, then silence — landscape stranded).
-                // Honor the app's wish ourselves, now that layout is settled: this is
-                // the same show a fresh tap produces, the one path that always lays out
-                // correctly.
-                if (refusedAppShow && currentInputConnection != null && !isInputViewShown) {
-                    if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-quarantine reshow")
-                    requestShowSelf(0)
+            rebuildJob?.cancel()
+            rebuildJob = mainScope.launch {
+                delay(POST_ROTATION_REBUILD_MS)
+                if (isInputViewShown) {
+                    if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "post-rotation rebuild")
+                    rebuildImeWindow()
                 }
             }
         }
     }
 
-    private var refuseShowsUntil = 0L
-    private var refusedAppShow = false
-    private var reshowJob: kotlinx.coroutines.Job? = null
-
-    /**
-     * Companion to the hide above. After the requestHideSelf, shows keep arriving: the
-     * system restore (configChange=true) and, ~600 ms in, unmarked re-requests from the
-     * app for its still-focused field — indistinguishable from a tap by arguments, and
-     * landing them mid-settle is exactly the latch. Time separates them: everything
-     * inside the quarantine is refused and remembered, and the scheduled reshow honors
-     * it once layout has settled.
-     */
-    override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
-        if (configChange || android.os.SystemClock.uptimeMillis() < refuseShowsUntil) {
-            if (!configChange) refusedAppShow = true
-            if (com.aosmith.type.BuildConfig.DEBUG) {
-                Log.d(TAG, "onShowInputRequested: refused (configChange=$configChange)")
-            }
-            return false
-        }
-        return super.onShowInputRequested(flags, configChange)
-    }
+    private var rebuildJob: kotlinx.coroutines.Job? = null
 
     // ---- window lifecycle instrumentation (debug builds only) ------------------------
     // Chasing the stuck-surface bug: system marks the IME hidden while the window stays
@@ -359,21 +337,23 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
      */
     override fun onUnstick() {
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onUnstick: rebuilding IME window")
+        mainScope.launch { rebuildImeWindow() }
+    }
+
+    private suspend fun rebuildImeWindow() {
         val w = window ?: return
-        mainScope.launch {
-            try {
-                w.dismiss()
-            } catch (e: Exception) {
-                Log.w(TAG, "onUnstick dismiss failed", e)
-            }
-            delay(250) // let WM finish removing the old window
-            try {
-                w.show()
-            } catch (e: Exception) {
-                Log.w(TAG, "onUnstick show failed", e)
-            }
-            requestShowSelf(0) // resync the framework's show state
+        try {
+            w.dismiss()
+        } catch (e: Exception) {
+            Log.w(TAG, "rebuild dismiss failed", e)
         }
+        delay(250) // let WM finish removing the old window
+        try {
+            w.show()
+        } catch (e: Exception) {
+            Log.w(TAG, "rebuild show failed", e)
+        }
+        requestShowSelf(0) // resync the framework's show state
     }
 
     override fun onWindowHidden() {
@@ -1261,7 +1241,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     companion object {
         private const val TAG = "TypeIME"
-        private const val SHOW_QUARANTINE_MS = 1500L
+        private const val POST_ROTATION_REBUILD_MS = 1500L
         private const val LIVE_DEBOUNCE_MS = 350L
         private const val DOUBLE_SPACE_MS = 500L
 
