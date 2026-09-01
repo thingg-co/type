@@ -9,5 +9,5 @@
     <dimen name="kb_bottom_padding">2dp</dimen>
     <dimen name="kb_key_text">16sp</dimen>
     <dimen name="kb_key_text_small">12sp</dimen>
-    <dimen name="kb_strip_height">26dp</dimen>
+    <dimen name="kb_strip_height">22dp</dimen>
 </resources>

@@ -183,17 +183,13 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 .getOrDefault(emptyList())
             visibility = View.GONE
         }
-        // The suggestion chips float over the top key row instead of reserving a bar of
-        // their own: the keyboard window is exactly the keys, and the pills appear only
-        // when there is something to show. Non-clickable overlay areas pass touches
-        // through to the keys beneath.
-        val stack = android.widget.FrameLayout(this)
-        val inner = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        inner.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        inner.addView(e, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        stack.addView(inner, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
-        stack.addView(s, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, resources.getDimensionPixelSize(R.dimen.kb_strip_height)))
-        container.addView(stack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // A slim reserved strip: floating the chips over the top key row covered the
+        // keys whenever predictions were active, which is almost always (tried, 0.6.14).
+        // Reserved-but-slim occludes nothing; with ✨ on the keyboard the strip is
+        // chips-only, and fields without suggestions get no strip at all.
+        container.addView(s, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, resources.getDimensionPixelSize(R.dimen.kb_strip_height)))
+        container.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        container.addView(e, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         // With targetSdk 35+ the IME window is edge-to-edge, so the bottom row would sit under the
         // navigation bar unless we pad for it ourselves. Below 35 the inset arrives as zero.
         // The bottom uses the stable (ignoring-visibility) navigation inset too: devices with a
@@ -395,6 +391,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         inputRoot?.let { ViewCompat.requestApplyInsets(it) }
         keyboardView?.layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.SYMBOLS else Layer.LETTERS
         showEmojiPanel(false)
+        strip?.visibility = if (suggestionsAllowed) View.VISIBLE else View.GONE
         strip?.clear()
         pendingUndo = null
         undoArmed = false
