@@ -113,8 +113,11 @@ class Dictionary(words: Sequence<String>) {
             return true
         }
         if (!walk(node)) return emptyList()
-        val families = found.groupBy(::stem)
-        if (families.size > limit) return emptyList()
+        // The deep tail exists to pass the known-word gate, never to be offered: a rare
+        // prefix ("za", "adz") must not surface junk chips just because junk is all
+        // that matches.
+        val families = found.filter { (rank[it] ?: Int.MAX_VALUE) <= OFFER_MAX_RANK }.groupBy(::stem)
+        if (families.isEmpty() || families.size > limit) return emptyList()
         return families.values
             .map { members -> members.minBy { rank[it] ?: Int.MAX_VALUE } }
             .sortedBy { rank[it] ?: Int.MAX_VALUE }
@@ -146,7 +149,7 @@ class Dictionary(words: Sequence<String>) {
         }
         val bad = misspellings
         return found.asSequence()
-            .filter { bad?.isMisspelling(it) != true }
+            .filter { bad?.isMisspelling(it) != true && (rank[it] ?: Int.MAX_VALUE) <= OFFER_MAX_RANK }
             .sortedBy { rank[it] ?: Int.MAX_VALUE }
             .take(max)
             .map { matchCase(prefix, it) }
@@ -311,6 +314,9 @@ class Dictionary(words: Sequence<String>) {
          */
         const val SLIP_MIN_RANK = 4000
         const val SHORT_SLIP_MAX_RANK = 2000
+
+        /** Words ranked past this are gate-only: accepted when typed, never offered. */
+        const val OFFER_MAX_RANK = 50_000
 
         /** A slip candidate must beat the typed word's rank by this factor. */
         const val SLIP_RANK_RATIO = 20
