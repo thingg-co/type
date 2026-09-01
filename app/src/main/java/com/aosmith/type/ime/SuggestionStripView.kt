@@ -32,6 +32,17 @@ class SuggestionStripView @JvmOverloads constructor(
 
     var listener: Listener? = null
 
+    /**
+     * Bubble mode: when set and [caretProvider] yields fresh geometry, suggestions render
+     * as floating bubbles beside the word in the app instead of chips in this band (the
+     * service collapses the band). Fields that never report a caret keep the chips.
+     */
+    var bubbles: SuggestionBubbles? = null
+    var caretProvider: (() -> android.graphics.Rect?)? = null
+
+    private fun bubbleCaret(): android.graphics.Rect? =
+        if (bubbles == null) null else caretProvider?.invoke()
+
     private val colorText = ContextCompat.getColor(context, R.color.kb_strip_text)
     private val colorMuted = ContextCompat.getColor(context, R.color.kb_strip_text_muted)
     private val colorModel = ContextCompat.getColor(context, R.color.kb_strip_llm)
@@ -88,6 +99,12 @@ class SuggestionStripView @JvmOverloads constructor(
     }
 
     fun showSuggestions(items: List<Suggestion>) {
+        bubbleCaret()?.let { caret ->
+            bubbles?.show(items, caret)
+            hideChips()
+            return
+        }
+        bubbles?.dismiss()
         statusView.visibility = View.GONE
         chips.forEachIndexed { i, chip ->
             val item = items.getOrNull(i)
@@ -109,6 +126,12 @@ class SuggestionStripView @JvmOverloads constructor(
      * these draw the same pills; the takeover keys below carry the emphasis.
      */
     fun showWordKeys(words: List<String>) {
+        bubbleCaret()?.let { caret ->
+            bubbles?.show(words.map { Suggestion(it) }, caret)
+            hideChips()
+            return
+        }
+        bubbles?.dismiss()
         statusView.visibility = View.GONE
         chips.forEachIndexed { i, chip ->
             val word = words.getOrNull(i)
@@ -126,6 +149,12 @@ class SuggestionStripView @JvmOverloads constructor(
     }
 
     fun showUndo(original: String) {
+        bubbleCaret()?.let { caret ->
+            bubbles?.showUndo(original, caret)
+            hideChips()
+            return
+        }
+        bubbles?.dismiss()
         statusView.visibility = View.GONE
         chips.forEachIndexed { i, chip ->
             if (i == 0) {
@@ -142,16 +171,22 @@ class SuggestionStripView @JvmOverloads constructor(
     }
 
     fun showStatus(text: String) {
+        bubbles?.dismiss()
         chips.forEach { it.visibility = View.GONE }
         statusView.text = text
         statusView.visibility = View.VISIBLE
     }
 
-    fun clear() {
+    private fun hideChips() {
         statusView.visibility = View.GONE
         chips.forEach {
             it.visibility = View.GONE
             it.setOnClickListener(null)
         }
+    }
+
+    fun clear() {
+        bubbles?.dismiss()
+        hideChips()
     }
 }

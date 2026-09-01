@@ -63,6 +63,14 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     /** The padded outer container: carries the nav-bar inset padding and is the nudge target. */
     private var inputRoot: View? = null
 
+    // Bubble mode: caret geometry from CursorAnchorInfo, screen coordinates. A field
+    // that reports a caret gets floating suggestion bubbles beside the word and no
+    // strip band; one that never does keeps the slim chips. Decided once per field.
+    private var bubbles: SuggestionBubbles? = null
+    private var caretRect: android.graphics.Rect? = null
+    private var caretAt = 0L
+    private var bubbleField = false
+
     /** Letters of the word under construction (to the left of the cursor). */
     private val word = StringBuilder()
     private var correctionAllowed = true
@@ -214,8 +222,38 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         strip = s
         keyboardView = k
         emojiPanel = e
+        bubbles = SuggestionBubbles(k).apply {
+            listener = object : SuggestionBubbles.Listener {
+                override fun onBubblePicked(text: String, isTypedWord: Boolean) = onSuggestionPicked(text, isTypedWord)
+                override fun onBubbleUndo() = onUndo()
+            }
+        }
+        s.bubbles = bubbles
+        s.caretProvider = {
+            caretRect?.takeIf {
+                bubbleField && android.os.SystemClock.uptimeMillis() - caretAt < CARET_FRESH_MS
+            }
+        }
         applyPrefsToViews()
         return container
+    }
+
+    override fun onUpdateCursorAnchorInfo(info: android.view.inputmethod.CursorAnchorInfo) {
+        super.onUpdateCursorAnchorInfo(info)
+        val x = info.insertionMarkerHorizontal
+        val top = info.insertionMarkerTop
+        val bottom = info.insertionMarkerBottom
+        if (x.isNaN() || top.isNaN() || bottom.isNaN()) return
+        val pts = floatArrayOf(x, top, x, bottom)
+        info.matrix.mapPoints(pts)
+        caretRect = android.graphics.Rect(pts[0].toInt(), pts[1].toInt(), pts[2].toInt(), pts[3].toInt())
+        caretAt = android.os.SystemClock.uptimeMillis()
+        if (!bubbleField && suggestionsAllowed) {
+            // The field has proven caret reporting: suggestions move to bubbles beside
+            // the word and the strip band collapses. One relayout, at most once per field.
+            bubbleField = true
+            strip?.visibility = View.GONE
+        }
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
@@ -332,6 +370,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onWindowHidden() {
         super.onWindowHidden()
+        bubbles?.dismiss()
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowHidden")
     }
 
@@ -391,8 +430,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         inputRoot?.let { ViewCompat.requestApplyInsets(it) }
         keyboardView?.layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.SYMBOLS else Layer.LETTERS
         showEmojiPanel(false)
+        bubbleField = false
+        caretRect = null
         strip?.visibility = if (suggestionsAllowed) View.VISIBLE else View.GONE
         strip?.clear()
+        if (suggestionsAllowed) {
+            currentInputConnection?.requestCursorUpdates(
+                InputConnection.CURSOR_UPDATE_IMMEDIATE or InputConnection.CURSOR_UPDATE_MONITOR,
+            )
+        }
         pendingUndo = null
         undoArmed = false
         suppressedTakeoverPrefix = null
@@ -406,6 +452,8 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        bubbles?.dismiss()
+        currentInputConnection?.requestCursorUpdates(0)
         personalizer?.let { p ->
             if (prefs.learnFromTyping && p.pendingSamples > 0) {
                 mainScope.launch(Dispatchers.Default) {
@@ -521,6 +569,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (show) {
             panel.recents = prefs.emojiRecents
             cancelLive()
+            bubbles?.dismiss()
             keyboardView?.wordTakeover = null
             keyboardView?.keyWeights = null
         }
@@ -1211,6 +1260,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     companion object {
         private const val TAG = "TypeIME"
+        private const val CARET_FRESH_MS = 3000L
         private const val LIVE_DEBOUNCE_MS = 350L
         private const val DOUBLE_SPACE_MS = 500L
 
