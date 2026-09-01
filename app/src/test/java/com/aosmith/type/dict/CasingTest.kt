@@ -35,4 +35,24 @@ class CasingTest {
             assertNull("'$w' must not be auto-capitalized", c.canonical(w))
         }
     }
+
+    @Test fun `curated given names are cased, ambiguous ones held out`() {
+        val c = File("src/main/assets/en_caps.txt").inputStream().use(Casing::fromStream)
+        for (w in listOf("jason", "jessica", "michelle", "brandon", "steven", "timothy")) {
+            assertEquals(w.replaceFirstChar { it.uppercaseChar() }, c.canonical(w))
+        }
+        // Names with a live lowercase reading wait for the cased-vocab retrain
+        // (tools/curated_words.py prints the full holdout list). Corpus-mined entries
+        // (joe, jean) are not held out: measured casing beats judgment.
+        for (w in listOf("mark", "jack", "holly", "hunter", "amber", "robin", "jake")) {
+            assertNull("'$w' must not be auto-capitalized", c.canonical(w))
+        }
+    }
+
+    @Test fun `curated slang is in the vocabulary`() {
+        val words = File("src/main/assets/en_words.txt").readLines().toHashSet()
+        for (w in listOf("ngl", "bruh", "smh", "gimme", "lemme", "y'all", "welp", "tmrw")) {
+            assertTrue("'$w' missing from en_words.txt", w in words)
+        }
+    }
 }
