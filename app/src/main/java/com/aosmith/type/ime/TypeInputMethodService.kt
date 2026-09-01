@@ -333,6 +333,14 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     override fun onWindowShown() {
         super.onWindowShown()
         if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowShown")
+        // The system draws its IME affordances (language switch, minimize) in the nav
+        // region colored by OUR window's declared appearance; without this they render
+        // white on the light keyboard.
+        window?.window?.let { w ->
+            val light = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).isAppearanceLightNavigationBars = light
+        }
     }
 
     /**
