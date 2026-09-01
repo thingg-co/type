@@ -25,7 +25,10 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
 - `llm/` - `SpellLlm` (modes, prefix split via chat template, output validation), `Prompts`.
 - `dict/` - 64k-word frequency list + trie (assets/en_words.txt): known-word gate,
   keyboard-weighted (KeyNeighbors) bounded edit-distance suggestions, adaptive-key weights;
-  Contractions auto-apostrophizes bare forms before the known-word gate. `Lexer` finds previous tokens;
+  Contractions auto-apostrophizes bare forms before the known-word gate; Confusables lists
+  swappable words (then/than, there/their/they're) whose margins the prediction network
+  decides — thresholds calibrated by tools/confusables_calibrate.py + ConfusableCalibrationHarness,
+  pinned by ConfusableMarginProbeTest. `Lexer` finds previous tokens;
   `NeuralLm` (assets/en_nextword.bin, trained/exported by tools/nn/train.py, golden-vector
   tested) predicts and ranks by a K-word window (K in the asset header, currently 4) with `Bigrams` (assets/en_bigrams.bin,
   tools/build_bigrams.py) as fallback; `Personalizer` learns sparse per-user deltas over the

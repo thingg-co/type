@@ -27,6 +27,10 @@ object Prompts {
         wordRequest("it was", "realy") to "really",
         wordRequest("my friend", "Priya") to "Priya",
         wordRequest("do you", "rememebr") to "remember",
+        // Contractions are in scope: fix the bare form when context calls for it, and
+        // leave it when the bare word is what was meant.
+        wordRequest("i think", "were") to "we're",
+        wordRequest("the dog wagged", "its") to "its",
     )
 
     /** Few-shot turns for sentence mode. */

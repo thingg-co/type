@@ -53,6 +53,14 @@ object ModelCatalog {
             sizeBytes = 1_894_532_128L,
             description = "Fixed every typo and sentence in our tests. Big download, worth it on a recent phone.",
         ),
+        ModelSpec(
+            id = "qwen2.5-3b-q4",
+            name = "Qwen2.5 3B (most thorough)",
+            fileName = "qwen2.5-3b-instruct-q4_k_m.gguf",
+            url = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
+            sizeBytes = 2_104_932_768L,
+            description = "The best whole-sentence fixes in our tests, a few times slower per word. For flagship phones.",
+        ),
     )
 
     fun byId(id: String?): ModelSpec? = models.firstOrNull { it.id == id }

@@ -10,6 +10,9 @@ sealed class KeyAction {
     object Space : KeyAction()
     data class SwitchLayer(val layer: Layer) : KeyAction()
 
+    /** Opens the emoji panel in place of the key rows. */
+    object SwitchEmoji : KeyAction()
+
     /** A whole-word key shown during word takeover; commits the word plus a space. */
     data class Word(val word: String) : KeyAction()
 
@@ -46,6 +49,7 @@ object KeyboardLayouts {
     private val space = KeySpec("", KeyAction.Space, 5f)
     private val comma = KeySpec(",", KeyAction.Text(","), 1f, special = true)
     private val period = KeySpec(".", KeyAction.Text("."), 1f, special = true)
+    private val emoji = KeySpec("😀", KeyAction.SwitchEmoji, 1f, special = true)
     private val toSymbols = KeySpec("?123", KeyAction.SwitchLayer(Layer.SYMBOLS), 1.5f, special = true)
     private val toSymbols2 = KeySpec("#+=", KeyAction.SwitchLayer(Layer.SYMBOLS2), 1.5f, special = true)
     private val toLetters = KeySpec("ABC", KeyAction.SwitchLayer(Layer.LETTERS), 1.5f, special = true)
@@ -55,7 +59,7 @@ object KeyboardLayouts {
             RowSpec(chars("qwertyuiop")),
             RowSpec(chars("asdfghjkl"), leadingPad = 0.5f, trailingPad = 0.5f),
             RowSpec(listOf(shift) + chars("zxcvbnm") + listOf(backspace)),
-            RowSpec(listOf(toSymbols, comma, space, period, enter)),
+            RowSpec(listOf(toSymbols, emoji, comma, KeySpec("", KeyAction.Space, 4f), period, enter)),
         ),
     )
 

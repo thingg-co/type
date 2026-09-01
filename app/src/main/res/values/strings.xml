@@ -37,4 +37,5 @@
     <string name="strip_undo">Undo</string>
     <string name="strip_fix">Fix</string>
     <string name="strip_thinking">…</string>
+    <string name="emoji_no_recents">No recent emoji yet</string>
 </resources>

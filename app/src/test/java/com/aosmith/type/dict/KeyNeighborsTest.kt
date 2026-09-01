@@ -19,6 +19,15 @@ class KeyNeighborsTest {
         assertFalse(KeyNeighbors.adjacent('e', 'e'))  // same key is not a slip
     }
 
+    @Test fun `neighbour lists cover the cross-row slips`() {
+        assertTrue('k' in KeyNeighbors.neighbors('i'))
+        assertTrue('i' in KeyNeighbors.neighbors('k'))
+        assertTrue('m' in KeyNeighbors.neighbors('n'))
+        assertTrue('m' in KeyNeighbors.neighbors('k'))
+        assertFalse('p' in KeyNeighbors.neighbors('q'))
+        assertTrue(KeyNeighbors.neighbors('\'').isEmpty())
+    }
+
     @Test fun `weighted distance makes neighbour slips cheap`() {
         val dict = Dictionary(TestWords.LIST.asSequence())
         // "ststion" -> "station": a->s is one adjacent slip, well under a full edit.

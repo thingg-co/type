@@ -47,7 +47,9 @@ def emit(sentence_ids):
 
 def handle_text(text):
     global skipped
-    for raw in SPLIT.split(text):
+    # Curly apostrophes would split "don’t" into "don" + "t" and starve every
+    # contraction of its true frequency; Tatoeba has a few thousand of them.
+    for raw in SPLIT.split(text.replace("’", "'")):
         words = WORD.findall(raw.lower())
         if not 3 <= len(words) <= 40:
             continue

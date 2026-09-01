@@ -39,6 +39,9 @@ WORD_EXAMPLES = [
     (word_req("it was", "realy"), "really"),
     (word_req("my friend", "Priya"), "Priya"),
     (word_req("do you", "rememebr"), "remember"),
+    # contractions are in scope: fix when context calls for it, keep the bare word otherwise
+    (word_req("i think", "were"), "we're"),
+    (word_req("the dog wagged", "its"), "its"),
 ]
 SENTENCE_EXAMPLES = [
     ("Th meeting is at nooon", "The meeting is at noon"),
@@ -97,6 +100,16 @@ WORD_CASES = [
     ("i hope", "well", "we'll"),
     ("that went", "well", "well"),
     ("if so", "id", "I'd"),
+    # confusable homophones: context should decide (the app screens these with the
+    # prediction net first; the model only sees the gray zone)
+    ("is bigger", "then", "than"),
+    ("see you", "then", "then"),
+    ("look over", "their", "there"),
+    ("i like", "their", "their"),
+    ("thanks,", "your", "you're"),
+    ("is", "your", "your"),
+    ("i want some", "quite", "quiet"),
+    ("do not", "loose", "lose"),
     # should be left alone
     ("my friend", "Priya", "Priya"),
     ("we use", "kubernetes", "kubernetes"),
@@ -119,6 +132,13 @@ SENTENCE_CASES = [
     ("what time does the libary close tonite", "what time does the library close tonight"),
     ("This sentence has no mistakes.", "This sentence has no mistakes."),
     ("I'm goign to be late, sorry", "I'm going to be late, sorry"),
+    # confusables in full sentences: this is the class the small models miss
+    ("Your welcome.", "You're welcome."),
+    ("I think were going to be late.", "I think we're going to be late."),
+    ("its there problem not ours", "it's their problem not ours"),
+    ("I want quite time to read", "I want quiet time to read"),
+    ("Thanks for your help.", "Thanks for your help."),
+    ("We were there yesterday.", "We were there yesterday."),
 ]
 
 
@@ -177,8 +197,8 @@ def clean_word(s):
     return s.split()[0] if s else ""
 
 
-def run_model(server, model, port, threads, jinja):
-    cmd = [server, "-m", model, "--port", str(port), "-t", str(threads), "-c", "2048", "-ngl", "99", "--log-disable"]
+def run_model(server, model, port, threads, jinja, ngl=99):
+    cmd = [server, "-m", model, "--port", str(port), "-t", str(threads), "-c", "2048", "-ngl", str(ngl), "--log-disable"]
     if jinja:
         cmd.append("--jinja")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -238,13 +258,14 @@ def main():
     ap.add_argument("--port", type=int, default=8089)
     ap.add_argument("--threads", type=int, default=6)
     ap.add_argument("--no-jinja", action="store_true")
+    ap.add_argument("--ngl", type=int, default=99, help="GPU layers; 0 keeps Metal free for a concurrent training run")
     ap.add_argument("models", nargs="+")
     args = ap.parse_args()
     results = []
     for m in args.models:
         print(f"== {m}", file=sys.stderr, flush=True)
         try:
-            r = run_model(args.server, m, args.port, args.threads, not args.no_jinja)
+            r = run_model(args.server, m, args.port, args.threads, not args.no_jinja, args.ngl)
         except Exception as e:
             print(f"   failed: {e}", file=sys.stderr)
             continue

@@ -31,7 +31,10 @@ object CorrectionFilter {
         val known = dictionary?.isKnown(candidate) ?: true
         // An unknown output is only trusted for a one-edit change; otherwise the model is guessing.
         if (!known && distance > 1f) return null
-        return Dictionary.matchCase(original, candidate)
+        // applyCase = matchCase plus the English "I" rule: "ill" -> "I'll", never "i'll";
+        // the casing table then upgrades proper nouns ("septmber" -> "September").
+        val cased = com.aosmith.type.dict.Contractions.applyCase(original, candidate)
+        return dictionary?.casing?.canonical(cased) ?: cased
     }
 
     /** Validates a whole-sentence correction. Null means "make no change". */

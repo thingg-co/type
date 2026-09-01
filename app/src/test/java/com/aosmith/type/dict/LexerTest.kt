@@ -29,4 +29,23 @@ class LexerTest {
         assertNull(Lexer.previousWord(""))
         assertNull(Lexer.previousWord("   "))
     }
+
+    @Test fun `emoji are invisible to context`() {
+        assertEquals("good", Lexer.previousWord("sounds good 😀 "))
+        assertEquals("good", Lexer.previousWord("sounds good😀"))
+        assertEquals("good", Lexer.previousWord("sounds good ❤️ "))       // BMP heart + VS16
+        assertEquals(listOf("sounds", "good"), Lexer.previousWords("sounds 🎉 good 😀 ", 5))
+        // Punctuation before the emoji still ends the sentence.
+        assertNull(Lexer.previousWord("sounds good! 😀 "))
+    }
+
+    @Test fun `emoji chars are classified, letters and punctuation are not`() {
+        assertEquals(true, Lexer.isEmojiChar('\uD83D'))  // surrogate half of 😀
+        assertEquals(true, Lexer.isEmojiChar('☔'))
+        assertEquals(true, Lexer.isEmojiChar('️'))  // variation selector
+        assertEquals(false, Lexer.isEmojiChar('a'))
+        assertEquals(false, Lexer.isEmojiChar('\''))
+        assertEquals(false, Lexer.isEmojiChar('.'))
+        assertEquals(false, Lexer.isEmojiChar('!'))
+    }
 }

@@ -16,11 +16,15 @@ import androidx.core.view.updatePadding
 import com.aosmith.type.Prefs
 import com.aosmith.type.R
 import com.aosmith.type.dict.Bigrams
+import com.aosmith.type.dict.Casing
 import com.aosmith.type.dict.Dictionary
 import com.aosmith.type.dict.Lexer
 import com.aosmith.type.dict.NeuralLm
 import com.aosmith.type.dict.Personalizer
+import com.aosmith.type.dict.SlipProfile
+import com.aosmith.type.dict.KeyNeighbors
 import com.aosmith.type.dict.TypoTable
+import com.aosmith.type.dict.Confusables
 import com.aosmith.type.dict.Contractions
 import com.aosmith.type.dict.MidWordAction
 import com.aosmith.type.dict.TypingPolicy
@@ -35,22 +39,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, SuggestionStripView.Listener {
+class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, SuggestionStripView.Listener, EmojiPanelView.Listener {
 
     private lateinit var prefs: Prefs
     private lateinit var store: ModelStore
     private lateinit var llm: SpellLlm
 
     @Volatile private var dictionary: Dictionary? = null
+    @Volatile private var emojiWords: EmojiSuggestions? = null
     @Volatile private var bigrams: Bigrams? = null
     @Volatile private var neural: NeuralLm? = null
     @Volatile private var personalizer: Personalizer? = null
+    @Volatile private var slipProfile: SlipProfile? = null
+    @Volatile private var slipDirty = false
     private var noLearning = false
 
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var keyboardView: KeyboardView? = null
     private var strip: SuggestionStripView? = null
+    private var emojiPanel: EmojiPanelView? = null
 
     /** Letters of the word under construction (to the left of the cursor). */
     private val word = StringBuilder()
@@ -62,20 +70,31 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private var undoArmed = false
     private var suppressedTakeoverPrefix: String? = null
     private val sessionAccepted = HashSet<String>()
+    private var lastSpaceAt = 0L
 
     private class Undo(val original: String, val replacement: String, val separator: String)
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "model_id") maybeLoadModel()
-        if (key == "learn_typing") neural?.personal = if (prefs.learnFromTyping) personalizer else null
+        if (key == "learn_typing") {
+            neural?.personal = if (prefs.learnFromTyping) personalizer else null
+            KeyNeighbors.personal = if (prefs.learnFromTyping) slipProfile else null
+        }
         if (key == "personal_cleared") {
             personalizer?.clear()
             personalFile().delete()
+            slipProfile?.clear()
+            slipFile().delete()
         }
         applyPrefsToViews()
     }
 
     private fun personalFile() = java.io.File(filesDir, "personal.bin")
+
+    private fun slipFile() = java.io.File(filesDir, "slips.bin")
+
+    /** True when this field and the settings allow learning from what the user does. */
+    private fun learningAllowed(): Boolean = prefs.learnFromTyping && suggestionsAllowed && !noLearning
 
     override fun onCreate() {
         super.onCreate()
@@ -89,7 +108,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                     d.misspellings = runCatching { TypoTable.load(this@TypeInputMethodService) }
                         .onFailure { Log.e(TAG, "typo table load failed", it) }
                         .getOrNull()
+                    d.casing = runCatching { Casing.load(this@TypeInputMethodService) }
+                        .onFailure { Log.e(TAG, "casing table load failed", it) }
+                        .getOrNull()
                 }
+            }
+            emojiWords = withContext(Dispatchers.IO) {
+                runCatching { EmojiSuggestions.load(this@TypeInputMethodService) }
+                    .onFailure { Log.e(TAG, "emoji suggestions load failed", it) }
+                    .getOrNull()
             }
             bigrams = withContext(Dispatchers.IO) {
                 runCatching { Bigrams.load(this@TypeInputMethodService) }
@@ -101,6 +128,17 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                     .onFailure { Log.i(TAG, "next-word network unavailable: ${it.message}") }
                     .getOrNull()
             }
+            slipProfile = withContext(Dispatchers.IO) {
+                SlipProfile().also { p ->
+                    runCatching { slipFile().takeIf { it.exists() }?.inputStream()?.use(p::load) }
+                        .onFailure {
+                            Log.w(TAG, "slip profile discarded: ${it.message}")
+                            p.clear()
+                            slipFile().delete()
+                        }
+                }
+            }
+            KeyNeighbors.personal = if (prefs.learnFromTyping) slipProfile else null
             neural?.let { n ->
                 personalizer = withContext(Dispatchers.IO) {
                     Personalizer(n).also { p ->
@@ -134,8 +172,16 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
         val s = SuggestionStripView(this).apply { listener = this@TypeInputMethodService }
         val k = KeyboardView(this).apply { listener = this@TypeInputMethodService }
+        val e = EmojiPanelView(this).apply {
+            listener = this@TypeInputMethodService
+            categories = runCatching { EmojiData.load(this@TypeInputMethodService) }
+                .onFailure { Log.e(TAG, "emoji data load failed", it) }
+                .getOrDefault(emptyList())
+            visibility = View.GONE
+        }
         container.addView(s, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, resources.getDimensionPixelSize(R.dimen.kb_strip_height)))
         container.addView(k, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        container.addView(e, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         // With targetSdk 35+ the IME window is edge-to-edge, so the bottom row would sit under the
         // navigation bar unless we pad for it ourselves. Below 35 the inset arrives as zero.
         // The bottom uses the stable (ignoring-visibility) navigation inset too: devices with a
@@ -158,11 +204,91 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         ViewCompat.requestApplyInsets(container)
         strip = s
         keyboardView = k
+        emojiPanel = e
         applyPrefsToViews()
         return container
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        val wasShown = isInputViewShown
+        if (com.aosmith.type.BuildConfig.DEBUG) {
+            Log.d(TAG, "onConfigurationChanged orientation=${newConfig.orientation} wasShown=$wasShown")
+        }
+        super.onConfigurationChanged(newConfig)
+        // The rotate-and-back overlap (app lays out full height behind the visible
+        // keyboard) is an OEM/app inset bug — Gboard reproduces it identically — but a
+        // user-paced close/reopen of the keyboard recovers it, so for the known-affected
+        // apps we do exactly that automatically after rotation. A rapid bounce does NOT
+        // work (an 80 ms gap lands inside the animation being interrupted; tried); the
+        // hide must settle before the fresh show.
+        if (wasShown && currentInputEditorInfo?.packageName in ROTATION_BOUNCE_PACKAGES) {
+            pendingRotationBounce = true
+        }
+    }
+
+    // ---- window lifecycle instrumentation (debug builds only) ------------------------
+    // Chasing the stuck-surface bug: system marks the IME hidden while the window stays
+    // painted (insets-animation leash abandoned). These logs turn one real occurrence
+    // into a timeline: what we were asked, when, and what insets we reported.
+
+    private var lastLoggedInsets = ""
+    private var lastGoodContentTop = -1
+    private var lastGoodVisibleTop = -1
+
+    private var pendingRotationBounce = false
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowShown")
+        if (pendingRotationBounce) {
+            pendingRotationBounce = false
+            mainScope.launch {
+                delay(250)
+                if (!isInputViewShown) return@launch
+                requestHideSelf(0)
+                delay(400) // the app must settle into keyboard-hidden layout first
+                requestShowSelf(0)
+            }
+        }
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onWindowHidden")
+    }
+
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        // Protective guard for devices whose IME window spans more than the keyboard:
+        // there, zero top-insets while shown would tell the app the keyboard occupies
+        // nothing. On keyboard-sized windows (T807D) zero is the normal geometry and
+        // this never engages — the rotate-and-back inset latch on that device is a
+        // window-manager animation issue, handled in onConfigurationChanged instead.
+        val root = strip?.parent as? View
+        if (isInputViewShown) {
+            val degenerate = root == null || root.height == 0 ||
+                (outInsets.contentTopInsets == 0 && outInsets.visibleTopInsets == 0)
+            if (degenerate) {
+                if (lastGoodContentTop >= 0) {
+                    outInsets.contentTopInsets = lastGoodContentTop
+                    outInsets.visibleTopInsets = lastGoodVisibleTop
+                }
+            } else {
+                lastGoodContentTop = outInsets.contentTopInsets
+                lastGoodVisibleTop = outInsets.visibleTopInsets
+            }
+        }
+        if (com.aosmith.type.BuildConfig.DEBUG) {
+            val s = "content=${outInsets.contentTopInsets} visible=${outInsets.visibleTopInsets} " +
+                "touchable=${outInsets.touchableInsets} rootH=${root?.height ?: -1} shown=$isInputViewShown"
+            if (s != lastLoggedInsets) {
+                lastLoggedInsets = s
+                Log.d(TAG, "onComputeInsets $s")
+            }
+        }
+    }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
@@ -197,6 +323,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // Taskbar/nav state can change between shows without a new inset dispatch; ask again.
         (strip?.parent as? View)?.let { ViewCompat.requestApplyInsets(it) }
         keyboardView?.layer = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) Layer.SYMBOLS else Layer.LETTERS
+        showEmojiPanel(false)
         strip?.fixEnabled = suggestionsAllowed
         strip?.clear()
         pendingUndo = null
@@ -219,6 +346,15 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                     val t0 = System.currentTimeMillis()
                     p.trainAndMaybeSave(personalFile())
                     Log.d(TAG, "personal train burst over $n samples (${System.currentTimeMillis() - t0} ms)")
+                }
+            }
+        }
+        if (slipDirty) {
+            slipDirty = false
+            slipProfile?.let { p ->
+                mainScope.launch(Dispatchers.IO) {
+                    runCatching { slipFile().outputStream().use(p::save) }
+                        .onFailure { Log.w(TAG, "slip profile save failed: ${it.message}") }
                 }
             }
         }
@@ -267,7 +403,64 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         updateShift()
     }
 
-    override fun onSpace() = onText(" ")
+    override fun onSpace() {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastSpaceAt < DOUBLE_SPACE_MS && canDoubleSpacePeriod()) {
+            lastSpaceAt = 0
+            val ic = currentInputConnection ?: return
+            ic.beginBatchEdit()
+            ic.deleteSurroundingText(1, 0)
+            ic.commitText(". ", 1)
+            ic.endBatchEdit()
+            undoArmed = false
+            word.clear()
+            onWordChanged()
+            updateShift() // sentence caps: the editor's caps mode now asks for shift
+            return
+        }
+        lastSpaceAt = now
+        onText(" ")
+    }
+
+    /**
+     * Double-tapped space becomes ". " only after something sentence-like: a word, digit,
+     * emoji or closing quote/bracket followed by the first space. Never in fields where
+     * suggestions are off (passwords, URLs, email addresses).
+     */
+    private fun canDoubleSpacePeriod(): Boolean {
+        if (!suggestionsAllowed) return false
+        val ic = currentInputConnection ?: return false
+        val t = ic.getTextBeforeCursor(3, 0) ?: return false
+        if (t.length < 2 || t[t.length - 1] != ' ') return false
+        val prev = t[t.length - 2]
+        return prev.isLetterOrDigit() || prev == '\'' || prev == '"' ||
+            prev == ')' || prev == ']' || Lexer.isEmojiChar(prev)
+    }
+
+    // ---- emoji panel -----------------------------------------------------------------
+
+    override fun onEmoji() = showEmojiPanel(true)
+
+    override fun onBackToLetters() = showEmojiPanel(false)
+
+    override fun onEmojiPicked(emoji: String) {
+        onText(emoji)
+        prefs.emojiRecents = listOf(emoji) + prefs.emojiRecents.filterNot { it == emoji }
+        emojiPanel?.recents = prefs.emojiRecents
+    }
+
+    private fun showEmojiPanel(show: Boolean) {
+        val panel = emojiPanel ?: return
+        if (show) {
+            panel.recents = prefs.emojiRecents
+            cancelLive()
+            keyboardView?.wordTakeover = null
+            keyboardView?.keyWeights = null
+        }
+        panel.visibility = if (show) View.VISIBLE else View.GONE
+        keyboardView?.visibility = if (show) View.GONE else View.VISIBLE
+        if (!show) onWordChanged()
+    }
 
     override fun onBackspace() {
         val ic = currentInputConnection ?: return
@@ -279,9 +472,22 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (!selected.isNullOrEmpty()) {
             ic.commitText("", 1)
             word.clear()
-        } else {
+        } else if (word.isNotEmpty()) {
             ic.deleteSurroundingTextInCodePoints(1, 0)
-            if (word.isNotEmpty()) word.setLength(word.length - 1)
+            word.setLength(word.length - 1)
+        } else {
+            // Outside a word the last thing may be an emoji: delete the whole grapheme
+            // cluster (flag pair, keycap, ZWJ family), not one code point of it.
+            val before = ic.getTextBeforeCursor(24, 0)?.toString()
+            if (before.isNullOrEmpty()) {
+                ic.deleteSurroundingTextInCodePoints(1, 0)
+            } else {
+                val it = android.icu.text.BreakIterator.getCharacterInstance()
+                it.setText(before)
+                val start = it.preceding(before.length)
+                val n = if (start == android.icu.text.BreakIterator.DONE) 1 else before.length - start
+                ic.deleteSurroundingText(n, 0)
+            }
         }
         onWordChanged()
         updateShift()
@@ -292,17 +498,59 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         val finished = word.toString()
         word.clear()
         undoArmed = false
+        // Enter may send the message, and a sent message is beyond correction: the
+        // synchronous net-only pass runs first. In multi-line fields the later \n
+        // boundary re-checks are no-ops (the corrected text no longer matches).
+        preSendFix(finished)
         // sendDefaultEditorAction applies the imeOptions rules (action set, no IME_FLAG_NO_ENTER_ACTION);
         // multi-line fields carry that flag, so they get a real newline instead.
         if (sendDefaultEditorAction(true)) {
             cancelLive()
             keyboardView?.keyWeights = null
             strip?.clear()
+            // Deliberately no InputConnection round-trips past this point: the app is
+            // busy dispatching the send and may be about to hide this window, and a
+            // main thread blocked in a synchronous IC call right then is how a hide
+            // animation gets abandoned mid-flight, leaving the keyboard painted over
+            // the expanded app (seen on T807D/Signal). The field restarts anyway,
+            // and onStartInputView recomputes shift.
         } else {
             sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
             onWordBoundary(finished, "\n")
+            updateShift()
         }
-        updateShift()
+    }
+
+    /**
+     * The last look before an editor action that may send: fixes a confusable in the
+     * final one or two words, synchronously and from the net alone (no model call, no
+     * undo once sent). With a TNW2 asset the scores include the end-of-message term,
+     * which is what finally separates "Your welcome" sent alone from "your welcome"
+     * mid-phrase.
+     */
+    private fun preSendFix(wordAtCursor: String) {
+        if (!correctionAllowed) return
+        val dict = dictionary ?: return
+        if (neural == null) return
+        var w = wordAtCursor
+        var sep = ""
+        if (w.isEmpty()) {
+            // Enter right after a space: the last committed word is the one to check.
+            val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString() ?: return
+            var i = before.length
+            while (i > 0 && before[i - 1] == ' ') i--
+            val end = i
+            while (i > 0 && isWordChar(before[i - 1])) i--
+            if (i == end) return
+            w = before.substring(i, end)
+            sep = before.substring(end)
+        }
+        if (w.length > 24 || !w.all { it.isLetter() || it == '\'' }) return
+        if (w.lowercase() in sessionAccepted) return
+        if (maybeFixConfusablePrevious(dict, w, sep, endOfMessage = true)) return
+        Confusables.alternativesOf(w).takeIf { it.isNotEmpty() }?.let { alts ->
+            maybeFixConfusable(dict, w, sep, alts, endOfMessage = true)
+        }
     }
 
     // ---- word tracking -----------------------------------------------------------------
@@ -331,6 +579,24 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 Log.d(TAG, "midWord '$current' prev=$prevWords neural=${neural != null} -> ${action.javaClass.simpleName}")
             }
             if (word.toString() != current) return@launch
+            // Emoji chips outrank the usual strip content: "lol" and a trailing "555" run
+            // offer their emoji first, with the best word suggestion keeping the last slot.
+            val emojiSugs = emojiWords?.let {
+                if (current.isNotEmpty()) it.forWord(current) else it.forTextTail(beforeText)
+            } ?: emptyList()
+            if (emojiSugs.isNotEmpty() && (pendingUndo == null || !undoArmed)) {
+                keyboardView?.wordTakeover = null
+                val words = when (action) {
+                    is MidWordAction.WordKeys -> action.words
+                    is MidWordAction.Predictions -> action.words
+                    is MidWordAction.NextWords -> action.words
+                    is MidWordAction.Typo -> action.dictSuggestions
+                    MidWordAction.None -> emptyList()
+                }
+                val chips = emojiSugs.take(2) + words.take(1)
+                strip?.showSuggestions(chips.map { SuggestionStripView.Suggestion(it) })
+                return@launch
+            }
             if (action !is MidWordAction.WordKeys) keyboardView?.wordTakeover = null
             when (action) {
                 is MidWordAction.WordKeys -> {
@@ -389,6 +655,8 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (!correctionAllowed || finished.isEmpty() || finished.length > 24) return
         if (!finished.all { it.isLetter() || it == '\'' }) return
         if (finished.lowercase() in sessionAccepted) return
+        // Laugh variants ("hahah", "loool") are interjections, not typos; leave them be.
+        if (EmojiSuggestions.normalizeLaugh(finished.lowercase()) != finished.lowercase()) return
         // Known-fixes layer runs before the known-word gate: the word list knows "dont" and
         // "belive" as words, which is precisely why the normal path can never fix them.
         Contractions.fix(finished)?.let { fixed ->
@@ -396,42 +664,192 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             return
         }
         val dict = dictionary ?: return
-        dict.misspellings?.fix(finished)?.let { fixed ->
-            if (!fixed.equals(finished, ignoreCase = true)) applyCorrection(finished, separator, fixed)
+        // Canonical casing: "september" -> "September" (en_caps.txt, corpus-mined).
+        // Correctly spelled words get their capital here; misspelled ones are cased
+        // right after their spelling fix below.
+        dict.casing?.canonical(finished)?.let { fixed ->
+            applyCorrection(finished, separator, fixed)
             return
         }
-        if (finished.length < 2) return
-        // Ambiguous contractions ("were"/"we're"): the prediction net screens by context,
-        // and only a decisive margin sends the word to the language model to decide.
-        Contractions.ambiguousReading(finished)?.let { reading ->
-            val n = neural
-            if (n != null && llm.isReady) {
-                val beforeText = textBeforeWord(finished, separator) ?: ""
-                val ctx = Lexer.previousWords(beforeText, 5).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
-                val bareId = dict.idOf(finished)
-                val readId = dict.idOf(reading)
-                if (ctx.isNotEmpty() && bareId >= 0 && readId >= 0) {
-                    val scores = n.scoreCandidates(ctx, intArrayOf(bareId, readId))
-                    if (scores[1] - scores[0] > AMBIGUOUS_MARGIN) {
-                        mainScope.launch {
-                            val corrected = llm.correctWord(beforeText, finished)
-                            if (corrected != null && !corrected.equals(finished, ignoreCase = true)) {
-                                applyCorrection(finished, separator, corrected)
-                            }
-                        }
-                    }
-                }
+        dict.misspellings?.fix(finished)?.let { fixed ->
+            if (!fixed.equals(finished, ignoreCase = true)) {
+                applyCorrection(finished, separator, dict.casing?.canonical(fixed) ?: fixed)
             }
             return
         }
-        if (dict.isKnown(finished)) return
+        if (finished.length < 2) return
+        // Confusable words ("then"/"than", "there"/"their"/"they're", bare contractions
+        // like "were"/"we're"): the prediction network decides from context; the table in
+        // Confusables only says which words are worth scoring. The lookback pass runs
+        // first because the word AFTER a confusable carries most of the signal ("your
+        // welcome"); the forward pass covers the word just finished from its left context.
+        if (maybeFixConfusablePrevious(dict, finished, separator)) return
+        Confusables.alternativesOf(finished).takeIf { it.isNotEmpty() }?.let { alts ->
+            maybeFixConfusable(dict, finished, separator, alts)
+            return
+        }
+        if (dict.isKnown(finished)) {
+            maybeCorrectRealWordSlip(dict, finished, separator)
+            return
+        }
         val before = textBeforeWord(finished, separator) ?: ""
+        // A capitalized unknown word mid-sentence is almost always a name ("meet Alexei
+        // at"): the model's guesses there mangle exactly the words it cannot know. At a
+        // sentence start capitalization carries no signal and correction stays on.
+        if (finished[0].isUpperCase() && finished.drop(1).any { it.isLowerCase() } &&
+            Lexer.previousWord(before) != null
+        ) return
         mainScope.launch {
             val corrected = if (llm.isReady) {
                 llm.correctWord(before, finished)
             } else {
                 dictionaryOnlyCorrection(dict, finished)
             }
+            if (corrected != null && !corrected.equals(finished, ignoreCase = true)) {
+                applyCorrection(finished, separator, corrected)
+            }
+        }
+    }
+
+    /**
+     * Forward confusable pass, at the word's own boundary: score the typed word against
+     * its alternatives given the words before it. Margins are calibrated on natural text
+     * (ConfusableCalibrationHarness + tools/confusables_calibrate.py): above DIRECT the
+     * net's pick is applied with undo; the gray zone asks the language model; anything
+     * weaker is left alone.
+     */
+    private fun maybeFixConfusable(
+        dict: Dictionary,
+        finished: String,
+        separator: String,
+        alts: List<String>,
+        endOfMessage: Boolean = false,
+    ) {
+        val n = neural ?: return
+        val beforeText = textBeforeWord(finished, separator) ?: return
+        val ctx = Lexer.previousWords(beforeText, 5).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
+        val typedId = dict.idOf(finished)
+        val altIds = alts.map(dict::idOf)
+        if (typedId < 0 || altIds.any { it < 0 }) return
+        if (endOfMessage && n.eosTrained) {
+            // At a send there is right context after all: the message ends. Score
+            // P(word | ctx) + P(end | ctx, word); two log terms, lookback-scale margin.
+            fun total(v: Int): Float =
+                n.scoreCandidates(ctx, intArrayOf(v))[0] + n.scoreCandidates(ctx + v, intArrayOf(n.bos))[0]
+            val typedTotal = total(typedId)
+            var best = -1
+            var bestTotal = Float.NEGATIVE_INFINITY
+            for (j in altIds.indices) {
+                val t = total(altIds[j])
+                if (t > bestTotal) {
+                    bestTotal = t
+                    best = j
+                }
+            }
+            if (bestTotal - typedTotal > Confusables.SEND_FORWARD_MARGIN) {
+                applyCorrection(finished, separator, Contractions.applyCase(finished, alts[best]))
+            }
+            return
+        }
+        if (ctx.isEmpty()) return
+        val scores = n.scoreCandidates(ctx, intArrayOf(typedId) + altIds.toIntArray())
+        val best = (1 until scores.size).maxBy { scores[it] }
+        val margin = scores[best] - scores[0]
+        when {
+            margin > Confusables.DIRECT_MARGIN ->
+                applyCorrection(finished, separator, Contractions.applyCase(finished, alts[best - 1]))
+            // A send cannot wait on the model; anything below DIRECT stays as typed.
+            endOfMessage -> {}
+            margin > Confusables.MODEL_MARGIN && llm.isReady -> mainScope.launch {
+                val corrected = llm.correctWord(beforeText, finished)
+                if (corrected != null && !corrected.equals(finished, ignoreCase = true)) {
+                    applyCorrection(finished, separator, corrected)
+                }
+            }
+        }
+    }
+
+    /**
+     * Lookback confusable pass: once the word after a confusable is known, the network
+     * scores P(variant | ctx) + P(current | ctx, variant) for each variant — "your
+     * welcome" is undecidable at "your" but obvious at "welcome". This is where most of
+     * the calibrated catch rate lives. Returns true when it rewrote the previous word.
+     */
+    private fun maybeFixConfusablePrevious(
+        dict: Dictionary,
+        finished: String,
+        separator: String,
+        endOfMessage: Boolean = false,
+    ): Boolean {
+        val n = neural ?: return false
+        val beforeText = textBeforeWord(finished, separator) ?: return false
+        // The previous word with its original casing, only across plain spaces: any
+        // punctuation between the words means a sentence boundary the net must not cross.
+        var i = beforeText.length
+        while (i > 0 && beforeText[i - 1] == ' ') i--
+        val end = i
+        while (i > 0 && isWordChar(beforeText[i - 1])) i--
+        if (end == beforeText.length || end == i) return false
+        val prevCased = beforeText.substring(i, end)
+        val prevLower = prevCased.lowercase()
+        val alts = Confusables.alternativesOf(prevLower)
+        if (alts.isEmpty()) return false
+        if (prevLower in sessionAccepted) return false
+        // Never flip a word this pass or another just wrote; the undo chip owns it now.
+        if (pendingUndo?.replacement?.equals(prevCased, ignoreCase = true) == true) return false
+        val prevId = dict.idOf(prevLower)
+        val curId = dict.idOf(finished)
+        val altIds = alts.map(dict::idOf)
+        if (prevId < 0 || curId < 0 || altIds.any { it < 0 }) return false
+        val ctx2 = Lexer.previousWords(beforeText.substring(0, i), 5)
+            .map { w -> dict.idOf(w).let { id -> if (id >= 0) id else n.unk } }
+        val eos = endOfMessage && n.eosTrained
+        fun total(v: Int): Float {
+            var t = n.scoreCandidates(ctx2, intArrayOf(v))[0] + n.scoreCandidates(ctx2 + v, intArrayOf(curId))[0]
+            // At a send the sentence also ends right after the current word.
+            if (eos) t += n.scoreCandidates(ctx2 + v + curId, intArrayOf(n.bos))[0]
+            return t
+        }
+        val typedTotal = total(prevId)
+        var best = -1
+        var bestTotal = Float.NEGATIVE_INFINITY
+        for (j in altIds.indices) {
+            val t = total(altIds[j])
+            if (t > bestTotal) {
+                bestTotal = t
+                best = j
+            }
+        }
+        val bar = if (eos) Confusables.SEND_LOOKBACK_MARGIN else Confusables.LOOKBACK_MARGIN
+        if (bestTotal - typedTotal <= bar) return false
+        val sep = beforeText.substring(end)
+        applyCorrection(prevCased, sep, Contractions.applyCase(prevCased, alts[best]))
+        return true
+    }
+
+    /**
+     * A finished word can pass the known-word gate and still be a fat-finger slip: "nake",
+     * "mot" and "cam" are all in the 64k list. The dictionary flags rare words with a far
+     * more common neighbour-substitution variant, the prediction net screens by context
+     * (same shape as the ambiguous-contraction path), and only then does the language model
+     * decide. Its output still goes through CorrectionFilter and arrives with undo, so the
+     * weakened dictionary gate is backed by three stronger steps behind it.
+     */
+    private fun maybeCorrectRealWordSlip(dict: Dictionary, finished: String, separator: String) {
+        val n = neural ?: return
+        if (!llm.isReady) return
+        val candidates = dict.slipCandidates(finished)
+        if (candidates.isEmpty()) return
+        val beforeText = textBeforeWord(finished, separator) ?: return
+        val ctx = Lexer.previousWords(beforeText, 5).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
+        if (ctx.isEmpty()) return
+        val typedId = dict.idOf(finished)
+        val bestId = dict.idOf(candidates.first())
+        if (typedId < 0 || bestId < 0) return
+        val scores = n.scoreCandidates(ctx, intArrayOf(typedId, bestId))
+        if (scores[1] - scores[0] <= SLIP_MARGIN) return
+        mainScope.launch {
+            val corrected = llm.correctWord(beforeText, finished)
             if (corrected != null && !corrected.equals(finished, ignoreCase = true)) {
                 applyCorrection(finished, separator, corrected)
             }
@@ -478,6 +896,26 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         pendingUndo = Undo(original, corrected, separator)
         undoArmed = typedSince.isEmpty()
         strip?.showUndo(original)
+        // Feedback into personalization: the boundary already recorded the mistyped word,
+        // so the corrected one goes in at double weight, and the slip profile learns the
+        // key-level substitution. An undo takes both back out (see revertCorrection).
+        if (learningAllowed()) {
+            slipProfile?.let {
+                it.recordCorrection(original, corrected)
+                slipDirty = true
+            }
+            val dict = dictionary
+            val n = neural
+            val p = personalizer
+            if (dict != null && n != null && p != null) {
+                val target = dict.idOf(corrected)
+                if (target >= 0) {
+                    val ctx = Lexer.previousWords(before.substring(0, idx), 5)
+                        .map { w -> dict.idOf(w).let { id -> if (id >= 0) id else n.unk } }
+                    p.record(ctx, target, copies = 2)
+                }
+            }
+        }
         if (com.aosmith.type.BuildConfig.DEBUG) {
             Log.i(TAG, "corrected '$original' -> '$corrected' (${llm.lastLatencyMs} ms)")
         }
@@ -499,6 +937,26 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         ic.commitText(undo.original + undo.separator + typedSince, 1)
         ic.endBatchEdit()
         sessionAccepted += undo.original.lowercase()
+        // The strongest signal a user ever sends: they saw the correction and rejected
+        // it. The slip profile forgets the substitution at triple weight, and the net's
+        // personal deltas learn that this word is what they mean in this context.
+        if (learningAllowed()) {
+            slipProfile?.let {
+                it.recordRevert(undo.original, undo.replacement)
+                slipDirty = true
+            }
+            val dict = dictionary
+            val n = neural
+            val p = personalizer
+            if (dict != null && n != null && p != null) {
+                val target = dict.idOf(undo.original)
+                if (target >= 0) {
+                    val ctx = Lexer.previousWords(before.substring(0, idx), 5)
+                        .map { w -> dict.idOf(w).let { id -> if (id >= 0) id else n.unk } }
+                    p.record(ctx, target, copies = 3)
+                }
+            }
+        }
         syncWordFromEditor()
     }
 
@@ -519,7 +977,8 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (isTypedWord) sessionAccepted += current.lowercase()
         ic.beginBatchEdit()
         if (current.isNotEmpty()) ic.deleteSurroundingText(current.length, 0)
-        ic.commitText(Dictionary.matchCase(current.ifEmpty { text }, text) + " ", 1)
+        val committed = Dictionary.matchCase(current.ifEmpty { text }, text)
+        ic.commitText((dictionary?.casing?.canonical(committed) ?: committed) + " ", 1)
         ic.endBatchEdit()
         recordTyped(text, " ")
         word.clear()
@@ -540,7 +999,11 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             return
         }
         val before = ic.getTextBeforeCursor(400, 0)?.toString() ?: return
-        val start = sentenceStart(before)
+        var start = sentenceStart(before)
+        // Corrections ignore emoji: the model never sees one (it would drop or mangle it),
+        // so the segment begins after the last emoji if there is one.
+        val lastEmoji = before.indexOfLast { Lexer.isEmojiChar(it) }
+        if (lastEmoji >= start) start = lastEmoji + 1
         val span = before.substring(start)          // what gets replaced, trailing whitespace included
         val segment = span.trimEnd()                // what the model sees
         val trailing = span.substring(segment.length)
@@ -628,6 +1091,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private fun applyPrefsToViews() {
         keyboardView?.adaptiveEnabled = prefs.adaptiveKeys
         keyboardView?.hapticsEnabled = prefs.haptics
+        emojiPanel?.hapticsEnabled = prefs.haptics
         correctionAllowed = suggestionsAllowed && prefs.autocorrect
     }
 
@@ -677,6 +1141,21 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     companion object {
         private const val TAG = "TypeIME"
         private const val LIVE_DEBOUNCE_MS = 350L
-        private const val AMBIGUOUS_MARGIN = 2.0f
+        private const val DOUBLE_SPACE_MS = 500L
+
+        /**
+         * Context margin before a real-word slip goes to the model. Lower than the
+         * contraction thresholds: the dictionary has already demanded a 20x frequency
+         * gap, so the net only has to confirm the common reading fits here too.
+         */
+        private const val SLIP_MARGIN = 1.0f
+
+        /**
+         * Apps that latch stale IME insets when rotation interrupts the insets
+         * animation (content then hides behind the keyboard until a close/reopen).
+         * For these, rotation triggers the settled hide/show bounce above. Verified
+         * against Gboard: the underlying bug is theirs/the OEM's, this is a shim.
+         */
+        private val ROTATION_BOUNCE_PACKAGES = setOf("org.thoughtcrime.securesms")
     }
 }

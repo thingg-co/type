@@ -34,11 +34,21 @@ object KeyNeighbors {
         return dy <= 1f && dx <= 1.01f && (dx * dx + dy * dy) <= 2.02f
     }
 
-    /** Substitution cost for weighted edit distance: neighbours are cheap slips. */
-    fun substitutionCost(a: Char, b: Char): Float = when {
-        a == b -> 0f
-        adjacent(a, b) -> ADJACENT_COST
-        else -> 1f
+    private val neighborMap: Map<Char, List<Char>> =
+        pos.keys.associateWith { a -> pos.keys.filter { b -> adjacent(a, b) }.sorted() }
+
+    /** Every key touching [c], from the same geometry as [adjacent]. */
+    fun neighbors(c: Char): List<Char> = neighborMap[c.lowercaseChar()] ?: emptyList()
+
+    /** Per-user slip profile; when set, learned pairs discount the geometric costs. */
+    @Volatile
+    var personal: SlipProfile? = null
+
+    /** Substitution cost for typing [a] when [b] was meant: neighbours are cheap slips. */
+    fun substitutionCost(a: Char, b: Char): Float {
+        if (a == b) return 0f
+        val base = if (adjacent(a, b)) ADJACENT_COST else 1f
+        return personal?.cost(a.lowercaseChar(), b.lowercaseChar(), base) ?: base
     }
 
     const val ADJACENT_COST = 0.45f

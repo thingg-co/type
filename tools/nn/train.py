@@ -39,12 +39,22 @@ def load_stream(path):
 
 
 def windows(stream, V):
-    """(N, K) contexts and (N,) targets; BOS pads sentence starts, UNK targets dropped."""
+    """(N, K) contexts and (N,) targets; BOS pads sentence starts, UNK targets dropped.
+
+    Sentence ends also emit a pair targeting BOS: P(BOS|ctx) becomes "the message ends
+    here", which is the missing evidence for sentence-final confusables ("Your welcome."
+    vs "you're welcome" as a complete message). Reusing BOS keeps the asset layout and
+    the app's id space unchanged; the export stamps TNW2 so the app knows the signal is
+    trained (a TNW1 asset never learned BOS as a target).
+    """
     BOS, UNK, SEP = V - 2, V - 1, 0xFFFF
     ctxs, tgts = [], []
     sent = []
     for t in stream:
         if t == SEP:
+            if sent:
+                ctxs.append(([BOS] * K + sent)[-K:])
+                tgts.append(BOS)
             sent = []
             continue
         ctx = ([BOS] * K + sent)[-K:]
@@ -179,7 +189,7 @@ def main():
 
     out = f"{out_dir}/en_nextword.bin"
     with open(out, "wb") as f:
-        f.write(b"TNW1")
+        f.write(b"TNW2")  # BOS is a trained end-of-sentence target (see windows())
         f.write(struct.pack(">iii", V, K, E))
         f.write(q.tobytes())
         f.write(scale.astype(">f4").tobytes())

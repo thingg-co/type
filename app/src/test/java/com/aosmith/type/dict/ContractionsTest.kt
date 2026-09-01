@@ -34,15 +34,23 @@ class ContractionsTest {
         assertEquals("shan't", Contractions.fix("shant"))
     }
 
-    @Test fun `ambiguous forms are exposed for context screening, never map-fixed`() {
+    @Test fun `ambiguous forms live in Confusables, never in the auto-fix map`() {
         for ((bare, reading) in listOf(
-            "were" to "we're", "well" to "we'll", "ill" to "I'll", "id" to "I'd",
+            "were" to "we're", "well" to "we'll", "ill" to "i'll", "id" to "i'd",
             "its" to "it's", "lets" to "let's", "hell" to "he'll", "wed" to "we'd",
         )) {
             assertNull("must not auto-fix $bare", Contractions.fix(bare))
-            assertEquals(reading, Contractions.ambiguousReading(bare))
+            assertEquals(listOf(reading), Confusables.alternativesOf(bare))
         }
-        assertNull(Contractions.ambiguousReading("hello"))
+        assertEquals(emptyList<String>(), Confusables.alternativesOf("hello"))
+    }
+
+    @Test fun `applyCase mirrors the typed case and always capitalizes I`() {
+        assertEquals("Their", Contractions.applyCase("There", "their"))
+        assertEquals("THAN", Contractions.applyCase("THEN", "than"))
+        assertEquals("I'll", Contractions.applyCase("ill", "i'll"))
+        assertEquals("I'll", Contractions.applyCase("Ill", "i'll"))
+        assertEquals("we're", Contractions.applyCase("were", "we're"))
     }
 
     @Test fun `words someone may have meant stay untouched`() {

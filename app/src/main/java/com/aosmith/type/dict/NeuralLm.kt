@@ -33,6 +33,10 @@ class NeuralLm private constructor(
     val bos: Int get() = vocab - 2
     val unk: Int get() = vocab - 1
 
+    /** True when the asset trained BOS as an end-of-sentence target (TNW2). */
+    var eosTrained: Boolean = false
+        internal set
+
     /** Sparse user-taught delta applied on top of the frozen base; see [Personalizer]. */
     @Volatile
     var personal: Personalizer? = null
@@ -145,7 +149,10 @@ class NeuralLm private constructor(
             DataInputStream(input.buffered(1 shl 16)).use { d ->
                 val magic = ByteArray(4)
                 d.readFully(magic)
-                if (!magic.contentEquals("TNW1".toByteArray())) throw IOException("bad nextword file")
+                // TNW2 additionally trained BOS as an end-of-sentence target, so
+                // logit(bos) means "the message ends here"; TNW1 never did.
+                val eosTrained = magic.contentEquals("TNW2".toByteArray())
+                if (!eosTrained && !magic.contentEquals("TNW1".toByteArray())) throw IOException("bad nextword file")
                 val v = d.readInt()
                 val k = d.readInt()
                 val e = d.readInt()
@@ -154,7 +161,7 @@ class NeuralLm private constructor(
                 val w1 = FloatArray(e * k * e) { d.readFloat() }
                 val b1 = FloatArray(e) { d.readFloat() }
                 val bout = FloatArray(v) { d.readFloat() }
-                NeuralLm(v, k, e, emb, scale, w1, b1, bout, nativeTopK)
+                NeuralLm(v, k, e, emb, scale, w1, b1, bout, nativeTopK).also { it.eosTrained = eosTrained }
             }
 
         fun load(context: android.content.Context, asset: String = "en_nextword.bin"): NeuralLm {

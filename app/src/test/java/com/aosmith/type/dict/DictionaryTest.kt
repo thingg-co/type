@@ -67,6 +67,30 @@ class DictionaryTest {
         assertEquals("hello", Dictionary.matchCase("helo", "Hello"))
     }
 
+    @Test fun `slip candidates flag rare neighbour variants of common words`() {
+        // Common words up front, filler to push the rare entries past SLIP_MIN_RANK, then
+        // the real-word slips the 64k list actually contains ("nake", "mot", "cam").
+        val words = listOf("the", "make", "not", "can", "hate", "night", "might") +
+            (0 until Dictionary.SLIP_MIN_RANK + 100).map { "zz${it}x" } +
+            listOf("nake", "mot", "cam", "jate")
+        val d = Dictionary(words.asSequence())
+        assertEquals(listOf("make"), d.slipCandidates("nake"))
+        assertEquals(listOf("not"), d.slipCandidates("mot"))
+        assertEquals(listOf("can"), d.slipCandidates("cam"))
+        assertEquals(listOf("make"), d.slipCandidates("Nake"))   // case-insensitive
+        assertTrue(d.slipCandidates("might").isEmpty())          // common words stay trusted
+        assertTrue(d.slipCandidates("make").isEmpty())
+        assertTrue(d.slipCandidates("zz2050x").isEmpty())        // rare but no common variant
+    }
+
+    @Test fun `slip candidates demand a wide frequency gap`() {
+        val words = listOf("the") +
+            (0 until Dictionary.SLIP_MIN_RANK + 100).map { "zz${it}x" } +
+            listOf("hate", "jate") // j->h is adjacent, but "hate" is barely more common here
+        val d = Dictionary(words.asSequence())
+        assertTrue(d.slipCandidates("jate").isEmpty())
+    }
+
     @Test fun `stem folds plural and possessive`() {
         assertEquals("restaurant", Dictionary.stem("restaurants"))
         assertEquals("restaurant", Dictionary.stem("restaurant's"))

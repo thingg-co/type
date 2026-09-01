@@ -1,0 +1,133 @@
+# Word-to-emoji suggestions: 'trigger|space-separated emoji'. Lowercase triggers;
+# laugh variants (hahaha, loool, 5555) are normalized in code before lookup.
+lol|😂 🤣
+lmao|🤣 😂
+rofl|🤣
+haha|😂 😄
+hehe|😆 😄
+555|😂 🤣
+love|❤️ 😍
+loved|❤️
+heart|❤️ 💕
+hearts|💕 💞
+kiss|😘 💋
+kisses|😘 💋
+hug|🤗
+hugs|🤗
+happy|😊 😄
+sad|😢 😞
+cry|😭 😢
+crying|😭
+angry|😠 😡
+mad|😡
+tired|😴 🥱
+sleep|😴 💤
+sleepy|😪 😴
+sick|🤒 🤢
+cold|🥶 ❄️
+hot|🥵 🔥
+wow|😮 🤩
+omg|😱 🙀
+wtf|🤨 😑
+yay|🎉 🥳
+woohoo|🎉 🥳
+yes|👍 ✅
+no|👎 ❌
+ok|👌 👍
+okay|👌
+thanks|🙏
+thank|🙏
+please|🙏
+sorry|😔 🙏
+congrats|🎉 👏
+congratulations|🎉 👏
+cheers|🥂 🍻
+beer|🍺 🍻
+wine|🍷
+coffee|☕
+tea|🍵
+pizza|🍕
+burger|🍔
+taco|🌮
+cake|🍰 🎂
+birthday|🎂 🎉
+party|🥳 🎉
+dance|💃 🕺
+music|🎵 🎶
+fire|🔥
+lit|🔥
+cool|😎 🆒
+nice|👍 😊
+great|👍 🎉
+perfect|💯 👌
+hundred|💯
+strong|💪
+muscle|💪
+dog|🐶
+puppy|🐶
+cat|🐱
+kitten|🐱
+sun|☀️ 🌞
+sunny|☀️
+rain|🌧️ ☔
+raining|🌧️
+snow|❄️ ☃️
+star|⭐ 🌟
+stars|✨ ⭐
+moon|🌙
+rainbow|🌈
+money|💰 💸
+rich|🤑 💰
+gift|🎁
+present|🎁
+car|🚗
+plane|✈️
+flight|✈️
+home|🏠
+house|🏠
+work|💼 🏢
+study|📚 ✏️
+book|📖 📚
+phone|📱
+call|📞
+run|🏃
+running|🏃
+gym|🏋️ 💪
+football|⚽ 🏈
+soccer|⚽
+basketball|🏀
+baseball|⚾
+tennis|🎾
+golf|⛳
+goal|⚽ 🥅
+win|🏆 🎉
+winner|🏆
+trophy|🏆
+poop|💩
+dead|💀 ⚰️
+ghost|👻
+clown|🤡
+robot|🤖
+eyes|👀
+look|👀
+think|🤔
+thinking|🤔
+hmm|🤔
+shrug|🤷
+facepalm|🤦
+pray|🙏
+luck|🍀 🤞
+lucky|🍀
+wait|⏳
+time|⏰ ⌚
+late|⏰ 🏃
+soon|🔜
+new|🆕 ✨
+night|🌙 😴
+morning|🌅 ☀️
+goodnight|🌙 😴
+bye|👋
+hello|👋 😊
+hi|👋
+hey|👋
+welcome|🙌 😊

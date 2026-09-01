@@ -51,7 +51,7 @@ object TypingPolicy {
 
         val completions = rerank(dict, bigrams, neural, previousWords, dict.completions(word, WORD_KEY_LIMIT))
             .filterNot { it.equals(word, ignoreCase = true) }
-        if (completions.isNotEmpty()) return MidWordAction.WordKeys(completions)
+        if (completions.isNotEmpty()) return MidWordAction.WordKeys(cased(dict, completions))
 
         if (dict.hasPrefix(word)) {
             val ranked = rerank(dict, bigrams, neural, previousWords, dict.predictions(word, CANDIDATES))
@@ -61,13 +61,13 @@ object TypingPolicy {
             val contextBacked = ranked.isNotEmpty() &&
                 contextScore(dict, bigrams, neural, previousWords, ranked.first()) > 0f
             if (word.length < 3 && !contextBacked) return MidWordAction.None
-            val predictions = ranked.take(PREDICTION_COUNT)
+            val predictions = cased(dict, ranked.take(PREDICTION_COUNT))
             return if (predictions.isEmpty()) MidWordAction.None else MidWordAction.Predictions(predictions)
         }
 
         if (dict.isKnown(word)) return MidWordAction.None
 
-        return MidWordAction.Typo(word, dict.suggest(word, 2), askModel = word.length >= 3)
+        return MidWordAction.Typo(word, cased(dict, dict.suggest(word, 2)), askModel = word.length >= 3)
     }
 
     /** Likely words for an empty prefix. The network handles sentence starts; bigrams cannot. */
@@ -85,10 +85,19 @@ object TypingPolicy {
         // Never suggest the word that was just typed: doubled words are almost never wanted,
         // and personalization biases would otherwise parrot frequent words back.
         val prev = previousWords.lastOrNull()
-        return words.filterNot { it.equals(prev, ignoreCase = true) || dict.isMisspelledWord(it) }
-            .take(max)
-            // The vocabulary is lowercase; the pronoun is the one word English always capitalizes.
-            .map { if (it == "i" || it.startsWith("i'")) it.replaceFirstChar { c -> c.uppercaseChar() } else it }
+        return cased(
+            dict,
+            words.filterNot { it.equals(prev, ignoreCase = true) || dict.isMisspelledWord(it) }.take(max),
+        )
+    }
+
+    /**
+     * Canonical capitalization for display and commit: the casing table covers months,
+     * names and places; the pronoun rule stays as a fallback for a missing table.
+     */
+    private fun cased(dict: Dictionary, words: List<String>): List<String> = words.map { w ->
+        dict.casing?.canonical(w)
+            ?: if (w == "i" || w.startsWith("i'")) w.replaceFirstChar { c -> c.uppercaseChar() } else w
     }
 
     /**

@@ -32,6 +32,7 @@ class KeyboardView @JvmOverloads constructor(
         fun onSpace()
         fun onWordKey(word: String)
         fun onEscapeWordMode()
+        fun onEmoji()
     }
 
     enum class Shift { OFF, ON, LOCKED }
@@ -252,7 +253,8 @@ class KeyboardView @JvmOverloads constructor(
                 val isWordKey = spec.action is KeyAction.Word
                 textPaint.textSize = when {
                     isWordKey -> labelSize * 0.95f
-                    spec.isLetter || label.length == 1 -> labelSize * scale
+                    // Code points, not chars: the emoji key's label is one glyph in two chars.
+                    spec.isLetter || label.codePointCount(0, label.length) == 1 -> labelSize * scale
                     else -> labelSizeSmall * scale
                 }
                 textPaint.isFakeBoldText = isWordKey || (spec.action == KeyAction.Shift && shift == Shift.LOCKED)
@@ -303,21 +305,35 @@ class KeyboardView @JvmOverloads constructor(
      * Adaptive hit resolution: when a touch lands on a letter that cannot continue the current
      * word but is close to the edge shared with a letter that can, prefer the possible one.
      */
-    private fun resolveAdaptive(box: KeyBox, x: Float): KeyBox {
+    private fun resolveAdaptive(box: KeyBox, x: Float, y: Float): KeyBox {
         val weights = keyWeights ?: return box
         if (!adaptiveEnabled || layer != Layer.LETTERS || !box.spec.isLetter) return box
-        val own = weights[(box.spec.action as KeyAction.Text).text[0]] ?: 0f
-        if (own > 0f) return box
+        fun weightOf(b: KeyBox) = weights[(b.spec.action as KeyAction.Text).text[0]] ?: 0f
+        if (weightOf(box) > 0f) return box
         val r = box.rect
         val edgeZone = r.width() * 0.3f
-        val neighbours = keys.filter { it.row == box.row && it.spec.isLetter && it !== box }
-        val candidate = when {
-            x - r.left < edgeZone -> neighbours.firstOrNull { it.rect.right <= r.left + 1f && it.rect.right >= r.left - keyGap - 1f }
-            r.right - x < edgeZone -> neighbours.firstOrNull { it.rect.left >= r.right - 1f && it.rect.left <= r.right + keyGap + 1f }
+        val letters = keys.filter { it.spec.isLetter && it !== box }
+        val sameRow = letters.filter { it.row == box.row }
+        val horizontal = when {
+            x - r.left < edgeZone -> sameRow.firstOrNull { it.rect.right <= r.left + 1f && it.rect.right >= r.left - keyGap - 1f }
+            r.right - x < edgeZone -> sameRow.firstOrNull { it.rect.left >= r.right - 1f && it.rect.left <= r.right + keyGap + 1f }
             else -> null
-        } ?: return box
-        val w = weights[(candidate.spec.action as KeyAction.Text).text[0]] ?: 0f
-        return if (w > 0.02f) candidate else box
+        }
+        // Vertical slips (k for i, m for k across the stagger) are as common as horizontal
+        // ones: near the top or bottom edge the overlapping key in the next row competes too.
+        val vEdgeZone = r.height() * 0.35f
+        val adjacentRow = when {
+            y - r.top < vEdgeZone -> box.row - 1
+            r.bottom - y < vEdgeZone -> box.row + 1
+            else -> null
+        }
+        val vertical = adjacentRow?.let { row ->
+            letters.filter { it.row == row && x >= it.rect.left && x <= it.rect.right }
+                .minByOrNull { kotlin.math.abs(it.rect.centerX() - x) }
+        }
+        return listOfNotNull(horizontal, vertical)
+            .filter { weightOf(it) > 0.02f }
+            .maxByOrNull(::weightOf) ?: box
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -348,7 +364,7 @@ class KeyboardView @JvmOverloads constructor(
                     } else {
                         // Release position wins if it is still on a key; otherwise the key pressed.
                         val up = keyAt(event.getX(index), event.getY(index)) ?: down
-                        val chosen = if (up.spec.isLetter) resolveAdaptive(up, event.getX(index)) else up
+                        val chosen = if (up.spec.isLetter) resolveAdaptive(up, event.getX(index), event.getY(index)) else up
                         fire(chosen.spec)
                     }
                 }
@@ -390,6 +406,7 @@ class KeyboardView @JvmOverloads constructor(
             }
             is KeyAction.Word -> listener?.onWordKey(action.word)
             KeyAction.EscapeWords -> listener?.onEscapeWordMode()
+            KeyAction.SwitchEmoji -> listener?.onEmoji()
         }
     }
 

@@ -23,4 +23,19 @@ class RealAssetProbeTest {
         println("ACTION=$action")
         assertTrue("got $action", action is MidWordAction.Predictions)
     }
+
+    @Test fun `real-word slips in the shipped list are flagged, everyday words are not`() {
+        val words = File("src/main/assets/en_words.txt")
+        assertTrue("asset paths wrong: ${File(".").absolutePath}", words.exists())
+        val dict = words.bufferedReader().useLines { Dictionary(it) }
+        // The i/k and m/n debris the known-word gate used to wave through.
+        assertTrue("make" in dict.slipCandidates("nake"))
+        assertTrue("not" in dict.slipCandidates("mot"))
+        assertTrue("now" in dict.slipCandidates("mow"))
+        assertTrue("can" in dict.slipCandidates("cam"))
+        // Common words with a frequent neighbour variant must stay untouched.
+        for (w in listOf("night", "mine", "info", "mode", "tight", "form")) {
+            assertTrue("'$w' was flagged: ${dict.slipCandidates(w)}", dict.slipCandidates(w).isEmpty())
+        }
+    }
 }

@@ -46,6 +46,11 @@ class Prefs(context: Context) {
         get() = sp.getString("bench_fingerprint", null)
         set(v) = sp.edit().putString("bench_fingerprint", v).apply()
 
+    /** Recently used emoji, newest first, space-separated (emoji never contain spaces). */
+    var emojiRecents: List<String>
+        get() = sp.getString("emoji_recents", "")!!.split(' ').filter { it.isNotEmpty() }
+        set(v) = sp.edit().putString("emoji_recents", v.take(32).joinToString(" ")).apply()
+
     /** Inference threads; 0 means pick automatically. */
     var threads: Int
         get() = sp.getInt("threads", 0)

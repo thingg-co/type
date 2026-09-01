@@ -27,6 +27,10 @@ class Dictionary(words: Sequence<String>) {
     @Volatile
     var misspellings: TypoTable? = null
 
+    /** Canonical capitalization (months, names, places); see [Casing]. */
+    @Volatile
+    var casing: Casing? = null
+
     private val rank = HashMap<String, Int>(80_000)
     private val root = Node()
     private val byLength = HashMap<Int, ArrayList<String>>()
@@ -197,6 +201,38 @@ class Dictionary(words: Sequence<String>) {
             .toList()
     }
 
+    /**
+     * Known words one adjacent-key substitution away from [word] that are far more common
+     * than it, best first. This catches the slip the known-word gate cannot: with 64k words
+     * in the list, "nake", "mot" and "cam" are all real entries, so mistyping "make", "not"
+     * or "can" produces a word that [isKnown] happily accepts. A rare word whose neighbour
+     * variant is vastly more frequent is suspicious; whether it was actually a slip is for
+     * the caller to establish from context before anything changes.
+     */
+    fun slipCandidates(word: String, max: Int = 2): List<String> {
+        val w = word.lowercase()
+        if (w.length < 3) return emptyList()
+        val own = rank[w] ?: return emptyList()
+        if (own <= SLIP_MIN_RANK) return emptyList()
+        val bad = misspellings
+        val found = ArrayList<Pair<String, Int>>(4)
+        val chars = w.toCharArray()
+        for (i in chars.indices) {
+            val orig = chars[i]
+            for (alt in KeyNeighbors.neighbors(orig)) {
+                chars[i] = alt
+                val candidate = String(chars)
+                val r = rank[candidate]
+                if (r != null && r.toLong() * SLIP_RANK_RATIO < own && bad?.isMisspelling(candidate) != true) {
+                    found += candidate to r
+                }
+            }
+            chars[i] = orig
+        }
+        found.sortBy { it.second }
+        return found.take(max).map { it.first }
+    }
+
     private class DistanceBuffers(n: Int) {
         var prev2 = FloatArray(n)
         var prev = FloatArray(n)
@@ -238,6 +274,17 @@ class Dictionary(words: Sequence<String>) {
         boundedDistance(a.lowercase(), b.lowercase(), 1e9f, DistanceBuffers(maxOf(a.length, b.length) + 1))
 
     companion object {
+
+        /**
+         * Words this common are never second-guessed as slips. Set from the real list:
+         * everyday words with a frequent neighbour variant ("mode"/"more", "info"/"into",
+         * "tight"/"right") sit at rank 2200-2700, while the genuine slip debris ("cam",
+         * "mot", "mand", "nake") starts around 6000.
+         */
+        const val SLIP_MIN_RANK = 4000
+
+        /** A slip candidate must beat the typed word's rank by this factor. */
+        const val SLIP_RANK_RATIO = 20
 
         /** "restaurant", "restaurants" and "restaurant's" share one stem. */
         fun stem(w: String): String =

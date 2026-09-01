@@ -25,7 +25,10 @@ object Lexer {
         var i = before.length
         var first = true
         while (words.size < k) {
-            while (i > 0 && before[i - 1].isWhitespace()) {
+            // Emoji are invisible to context, like whitespace: "sounds good 😀" must still
+            // condition on "good", and an emoji next to the cursor must not kill the context
+            // the way punctuation does.
+            while (i > 0 && (before[i - 1].isWhitespace() || isEmojiChar(before[i - 1]))) {
                 if (before[i - 1] == '\n') return words.reversed()
                 i--
             }
@@ -45,4 +48,21 @@ object Lexer {
         }
         return words.reversed()
     }
+
+    /**
+     * A UTF-16 unit that belongs to an emoji (or another astral-plane glyph). Surrogates
+     * cover everything above the BMP, where almost all emoji live; the listed ranges are
+     * the BMP emoji blocks (misc symbols, dingbats, arrows, geometric shapes, technical)
+     * plus the variation selector, ZWJ and keycap combiner. Char-level on purpose: callers
+     * walk backwards one UTF-16 unit at a time. Not included: '‼' and '⁉', which end a
+     * sentence like the plain punctuation they contain.
+     */
+    fun isEmojiChar(c: Char): Boolean =
+        c.isSurrogate() ||
+            c.code == 0xFE0F || c.code == 0x200D || c.code == 0x20E3 ||
+            c.code in 0x2600..0x27BF || c.code in 0x2B00..0x2BFF ||
+            c.code in 0x2300..0x23FF || c.code in 0x25A0..0x25FF ||
+            c.code in 0x2190..0x21FF ||
+            c.code == 0x2139 || c.code == 0x24C2 ||
+            c.code == 0x3030 || c.code == 0x303D || c.code == 0x3297 || c.code == 0x3299
 }

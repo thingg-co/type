@@ -45,7 +45,14 @@ class Personalizer(private val base: NeuralLm) {
 
     // ---- capture ---------------------------------------------------------------------
 
-    fun record(contextIds: List<Int>, target: Int) {
+    /**
+     * Queues one training sample. [copies] weights it in the replay buffer: ordinary
+     * typing records once, an applied correction twice (it must outweigh the mistaken
+     * word recorded at the boundary just before), and an undone correction three times —
+     * reverting is the most deliberate signal the user ever gives, and it is how the
+     * margins learn that this user really does mean "cam" or "mot".
+     */
+    fun record(contextIds: List<Int>, target: Int, copies: Int = 1) {
         if (target < 0 || target >= base.bos) return
         synchronized(lock) {
             val s = IntArray(base.k + 1)
@@ -54,7 +61,7 @@ class Personalizer(private val base: NeuralLm) {
                 s[i] = if (idx < 0) base.bos else contextIds[idx].coerceIn(0, base.unk)
             }
             s[base.k] = target
-            samples.addLast(s)
+            repeat(copies.coerceIn(1, 4)) { samples.addLast(s) }
             while (samples.size > MAX_SAMPLES) samples.removeFirst()
             lifetimeSamples++
         }
@@ -195,13 +202,18 @@ class Personalizer(private val base: NeuralLm) {
 
     companion object {
         private val MAGIC = "TPL1".toByteArray()
-        private const val MAX_SAMPLES = 20_000
+
+        // Capacity: months of typing, not weeks. The replay buffer is the memory span
+        // (~600 KB on disk at 60k), and the clamps are how far personal usage can bend
+        // the frozen model; both were raised once correction feedback started flowing
+        // in, since that signal is worth adapting to more strongly.
+        private const val MAX_SAMPLES = 60_000
         private const val NEGATIVES = 16
         private const val LR = 0.02f
         private const val DECAY = 1e-3f
-        private const val CLAMP = 0.6f
+        private const val CLAMP = 0.8f
 
         /** The context-free bias gets more room so often-typed words surface in any context. */
-        private const val BIAS_CLAMP = 1.5f
+        private const val BIAS_CLAMP = 2.0f
     }
 }
