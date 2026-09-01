@@ -49,6 +49,17 @@ class CasingTest {
         }
     }
 
+    @Test fun `states and cities are cased, primary-use collisions held out`() {
+        val c = File("src/main/assets/en_caps.txt").inputStream().use(Casing::fromStream)
+        for (w in listOf("texas", "dallas", "phoenix", "hampshire", "york", "bangkok", "tokyo")) {
+            assertEquals(w.replaceFirstChar { it.uppercaseChar() }, c.canonical(w))
+        }
+        // Held out: the lowercase reading is the primary chat use, not an occasional one.
+        for (w in listOf("turkey", "nice", "mobile", "orange", "reading", "buffalo", "jersey", "new")) {
+            assertNull("'$w' must not be auto-capitalized", c.canonical(w))
+        }
+    }
+
     @Test fun `curated slang is in the vocabulary`() {
         val words = File("src/main/assets/en_words.txt").readLines().toHashSet()
         for (w in listOf("ngl", "bruh", "smh", "gimme", "lemme", "y'all", "welp", "tmrw")) {

@@ -66,12 +66,35 @@ toby todd tom tommy tony tracy travis trevor tristan tyler valerie vanessa veron
 victor victoria vincent virginia vivian walter wayne wendy wesley whitney william
 xavier yvonne zachary zoe""".split()
 
+# US states, major US and world cities, and the distinctive components of multi-word
+# places (york, angeles, hampshire — never new). Held out: severe collisions where the
+# lowercase reading is the primary chat use, not an occasional one (turkey the bird,
+# jersey the shirt, buffalo the wings); those wait for cased vocab ids like the names.
+PLACES = """alabama alaska arizona arkansas california colorado connecticut delaware
+florida georgia hawaii idaho illinois indiana iowa kansas kentucky louisiana maine
+maryland massachusetts michigan minnesota mississippi missouri montana nebraska
+nevada hampshire mexico york carolina dakota ohio oklahoma oregon pennsylvania
+rhode tennessee texas utah vermont virginia washington wisconsin wyoming
+angeles francisco diego antonio jose orleans juan vegas
+dallas denver atlanta houston phoenix philadelphia philly sacramento portland
+nashville memphis orlando tampa tucson albuquerque omaha tulsa wichita boise
+spokane tacoma fresno oakland berkeley pasadena anaheim cleveland cincinnati
+columbus detroit pittsburgh baltimore indianapolis milwaukee minneapolis
+louisville raleigh richmond jacksonville honolulu anchorage reno brooklyn bronx
+manhattan hollywood chicago boston seattle miami
+bangkok phuket pattaya krabi melbourne toronto vancouver montreal dublin madrid
+barcelona lisbon amsterdam berlin rome milan munich vienna prague budapest warsaw
+oslo stockholm helsinki copenhagen athens cairo dubai delhi mumbai singapore seoul
+beijing shanghai taipei manila jakarta hanoi saigon kyoto osaka""".split()
+
+PLACE_HOLDOUTS = set("turkey nice mobile orange reading buffalo jersey bath split mesa normal surprise industry queens".split())
+
 vocab = [w.rstrip("\n") for w in open(VOCAB, encoding="utf-8")]
 have = set(vocab)
 caps_lines = open(CAPS, encoding="utf-8").read().splitlines()
 caps_have = set(l.split("\t")[0] for l in caps_lines if l and not l.startswith("#") and "\t" in l)
 
-cased_names = sorted(set(NAMES))
+cased_names = sorted((set(NAMES) | set(PLACES)) - PLACE_HOLDOUTS)
 new_words = sorted(set(w for w in SLANG if w not in have)) + [n for n in cased_names if n not in have]
 if len(vocab) + len(new_words) > ID_CAP:
     sys.exit("id space exhausted: %d + %d > %d" % (len(vocab), len(new_words), ID_CAP))
