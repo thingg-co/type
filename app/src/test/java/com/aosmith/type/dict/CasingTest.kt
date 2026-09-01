@@ -2,6 +2,7 @@ package com.aosmith.type.dict
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,6 +65,19 @@ class CasingTest {
         val words = File("src/main/assets/en_words.txt").readLines().toHashSet()
         for (w in listOf("ngl", "bruh", "smh", "gimme", "lemme", "y'all", "welp", "tmrw")) {
             assertTrue("'$w' missing from en_words.txt", w in words)
+        }
+    }
+
+    @Test fun `closed compounds are known, run-together typos are not`() {
+        val words = File("src/main/assets/en_words.txt").readLines().toHashSet()
+        // Compound admission (tools/expand_vocab.py): both parts trusted and 4+ letters.
+        for (w in listOf("minefield", "weeknight", "campsite", "screenshot")) {
+            assertTrue("'$w' missing from en_words.txt", w in words)
+        }
+        // Short function-word concatenations must stay out or autocorrect stops
+        // fixing the missing space.
+        for (w in listOf("andthe", "ofthe", "inthe")) {
+            assertFalse("'$w' must not be in en_words.txt", w in words)
         }
     }
 }

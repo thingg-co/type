@@ -20,7 +20,7 @@ import sys
 VOCAB = "app/src/main/assets/en_words.txt"
 CAPS = "app/src/main/assets/en_caps.txt"
 CAPS_MARK = "# Curated given names (tools/curated_words.py): the name reading wins over any lowercase one."
-ID_CAP = 1 << 16  # word ids are stored 16-bit
+ID_CAP = 128000  # matches expand_vocab.py; ids past 16 bits get no bigrams, UNK in the net
 
 SLANG = """ahaha ahahaha aww awww bday bestie besties bff bffr bffs brb bruh bruv
 bussin deadass defo ehh erm eww ewww ez ffs finna flexin fomo fyi gg ghosting gimme

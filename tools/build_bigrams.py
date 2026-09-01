@@ -15,8 +15,9 @@ src = sys.argv[1]
 cap = int(sys.argv[2]) if len(sys.argv) > 2 else 300_000
 
 words = [w.strip() for w in open("app/src/main/assets/en_words.txt", encoding="utf-8")]
-ids = {w: i for i, w in enumerate(words)}
-assert len(words) <= 0xFFFF, "word ids must fit 16 bits"
+# The packed key holds 16-bit ids; words past that line have no bigrams (they are the
+# rare tail — the web corpus would barely cover them anyway). Bigrams.kt guards reads.
+ids = {w: i for i, w in enumerate(words[: 1 << 16])}
 
 pairs = []
 for line in open(src, encoding="utf-8", errors="ignore"):

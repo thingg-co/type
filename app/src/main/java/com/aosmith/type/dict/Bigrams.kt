@@ -20,14 +20,16 @@ class Bigrams private constructor(
 
     /** Score of the pair (prev -> next), 0 when unseen. Higher is more likely. */
     fun score(prevId: Int, nextId: Int): Int {
-        if (prevId < 0 || nextId < 0) return 0
+        // Ids past 16 bits (vocabulary growth beyond the bigram build) have no pairs in
+        // the file and would corrupt the packed key; they are simply unseen here.
+        if (prevId < 0 || nextId < 0 || prevId > 0xFFFF || nextId > 0xFFFF) return 0
         val i = keys.binarySearch(key(prevId, nextId))
         return if (i >= 0) scores[i].toInt() and 0xFF else 0
     }
 
     /** All (nextId, score) pairs seen after [prevId], best first, at most [max]. */
     fun nextWords(prevId: Int, max: Int): List<Pair<Int, Int>> {
-        if (prevId < 0) return emptyList()
+        if (prevId < 0 || prevId > 0xFFFF) return emptyList()
         var i = lowerBound(key(prevId, 0))
         val end = key(prevId + 1, 0)
         val found = ArrayList<Pair<Int, Int>>(32)
