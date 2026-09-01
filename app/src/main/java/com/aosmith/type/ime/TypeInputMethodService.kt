@@ -240,21 +240,27 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // typing into an input pinned off-screen. No auto-reshow — racing the rotation
         // animation with a show is how the 0.5.7 bounce re-latched what it had cured.
         if (rotated && wasShown) {
+            refuseShowsUntil = android.os.SystemClock.uptimeMillis() + SHOW_QUARANTINE_MS
             requestHideSelf(0)
         }
     }
 
+    private var refuseShowsUntil = 0L
+
     /**
-     * The other half of hide-on-reorientation: the system restores the keyboard after a
-     * rotation by asking for a show with configChange=true, which overrides the
-     * requestHideSelf above (observed directly: hide requested at the config change,
-     * window re-shown 700 ms later by the restore). Refusing config-change shows is the
-     * designed way to stay hidden across reorientation; a user's tap on a field arrives
-     * with configChange=false and shows normally.
+     * The other half of hide-on-reorientation. After the requestHideSelf above, the
+     * keyboard comes back twice: the system's restore (a show with configChange=true —
+     * refused by flag), and ~600 ms later an unmarked show from the app itself
+     * re-requesting the keyboard for its still-focused field (observed in the logs with
+     * no way to tell it from a tap by its arguments). No human taps a field 600 ms into
+     * a rotation, so time is the discriminator: every show inside the quarantine is
+     * refused, fail-closed. A tap that does land that early costs one more tap.
      */
     override fun onShowInputRequested(flags: Int, configChange: Boolean): Boolean {
-        if (configChange) {
-            if (com.aosmith.type.BuildConfig.DEBUG) Log.d(TAG, "onShowInputRequested: refusing config-change restore")
+        if (configChange || android.os.SystemClock.uptimeMillis() < refuseShowsUntil) {
+            if (com.aosmith.type.BuildConfig.DEBUG) {
+                Log.d(TAG, "onShowInputRequested: refused (configChange=$configChange)")
+            }
             return false
         }
         return super.onShowInputRequested(flags, configChange)
@@ -1237,6 +1243,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
 
     companion object {
         private const val TAG = "TypeIME"
+        private const val SHOW_QUARANTINE_MS = 1500L
         private const val LIVE_DEBOUNCE_MS = 350L
         private const val DOUBLE_SPACE_MS = 500L
 
