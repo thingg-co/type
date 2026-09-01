@@ -224,7 +224,10 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         // work (an 80 ms gap lands inside the animation being interrupted; tried); the
         // hide must settle before the fresh show.
         if (wasShown && currentInputEditorInfo?.packageName in INSET_BOUNCE_PACKAGES) {
+            // Restart the quiet period even if a bounce is already in flight: a second
+            // rotation must never let the first bounce fire mid-animation.
             pendingInsetBounce = true
+            bounceJob?.cancel()
         }
     }
 
@@ -240,6 +243,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     private var pendingInsetBounce = false
     private var shownSinceHidden = false
     private var lastFieldKey = 0L
+    private var bounceJob: kotlinx.coroutines.Job? = null
 
     override fun onWindowShown() {
         super.onWindowShown()
@@ -251,12 +255,21 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
     }
 
+    /**
+     * At most one bounce is ever in flight, and every new trigger restarts its quiet
+     * period. A rotate-and-back within a second used to schedule two overlapping
+     * bounces whose hide landed inside the second rotation's insets animation — the
+     * exact interruption that latches the app (seen live on T807D/Signal, 0.5.7).
+     * Cancelling and rescheduling turns any burst of triggers into one bounce that
+     * runs only after the window has been quiet for the full delay.
+     */
     private fun scheduleSettledBounce() {
-        mainScope.launch {
-            delay(250)
+        bounceJob?.cancel()
+        bounceJob = mainScope.launch {
+            delay(600)
             if (!isInputViewShown) return@launch
             requestHideSelf(0)
-            delay(400) // the app must settle into keyboard-hidden layout first
+            delay(500) // the app must settle into keyboard-hidden layout first
             requestShowSelf(0)
         }
     }
