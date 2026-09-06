@@ -50,6 +50,7 @@ app/src/main/java/.../model/        Model catalog, storage, resumable downloader
 app/src/main/java/.../SettingsActivity.kt   setup steps, model download, options, test field
 app/src/main/assets/en_words.txt    126k English words, most frequent first
 tools/                              desktop eval harness used to choose the model and prompt
+tools/nn/                           next-word network: corpus prep, training, sweeps, evaluation, staging
 public/                             the GitHub Pages site
 third_party/llama.cpp               git submodule
 ```

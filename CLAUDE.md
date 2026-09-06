@@ -12,6 +12,9 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
 - Install + activate on a device/emulator: `tools/sideload.sh [debug [model.gguf]]`.
 - Model/prompt evaluation: `tools/eval.py --server <llama-server> model.gguf ...` replays the
   app's exact prompts; keep it in sync with `llm/Prompts.kt` whenever prompts change.
+- Python tooling tests: `python -m pytest -q tools` from the repo root with a venv that has torch
+  (on the Spark `~/lab/.venv/bin/python`). They cover the TNW asset format round trip, the batched
+  evaluator, the sweep runner, staging, the corpus preparer and the bigram builder.
 - `./gradlew test` runs the JVM suites (DictionaryTest, TypingPolicyTest, CorrectionFilterTest);
   verify UI changes by driving the emulator (adb `input tap`, `screencap`,
   logcat tags TypeIME, SpellLlm, TypeLLM, Dictionary). Pace scripted taps ~250 ms apart.
@@ -34,8 +37,14 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   dense trunk of one or more layers (TNW3 layout: header V, K, E, L; per layer out, in, W, b;
   TNW1/TNW2 one-layer assets still load). Two layers of 512 beat one on held-out text; three do
   not. Train on the Spark (CUDA, ~17 min per 60k steps) rather than the Mac (MPS corrupts the
-  126k-wide top-k in eval) with `Bigrams` (assets/en_bigrams.bin,
-  tools/build_bigrams.py) as fallback; `Personalizer` learns sparse per-user deltas over the
+  126k-wide top-k in eval). The format lives in tools/nn/tnw.py (export, reader, and the exact
+  quantized forward the app mirrors; TNW4 adds an untied output table, which trained worse under
+  the sampled softmax and is not used). A sweep is a json of runs for tools/nn/sweep.py, which
+  writes a results table; tools/nn/stage.py checks a run's golden vector and copies its asset
+  into the app. Corpora on the Spark: ~/type-data/data126k (news, wiki, Tatoeba; its val.bin is
+  the headline metric) and data_mix (the same plus 5.9M OpenSubtitles lines; data_subs/val.bin
+  is the conversational metric, where every net scores about ten points lower). Fallback is
+  `Bigrams` (assets/en_bigrams.bin, tools/build_bigrams.py); `Personalizer` learns sparse per-user deltas over the
   frozen network (state in files/personal.bin, shape-checked); `TypingPolicy` combines them.
   Word ids in BOTH binary
   assets are en_words.txt line numbers and expansion is append-only (ids never move,
