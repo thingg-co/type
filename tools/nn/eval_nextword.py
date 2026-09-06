@@ -12,6 +12,8 @@ import sys
 
 import numpy as np
 
+from tools.nn import tnw
+
 SEP = 0xFFFFFFFF
 K = 3
 
@@ -44,26 +46,12 @@ def bigram_score(prev, nxt):
     return int(bscores[i]) if i < bn and bkeys[i] == k else 0
 
 # network (quantized arithmetic, mirroring the app)
-raw = open(bin_path, "rb").read()
-magic = raw[:4]
-if magic == b"TNW3":
-    V, KK, E, L = struct.unpack(">iiii", raw[4:20]); o = 20
-else:
-    V, KK, E = struct.unpack(">iii", raw[4:16]); L = 1; o = 16
-q = np.frombuffer(raw[o:o + V * E], dtype=np.int8).reshape(V, E).astype(np.int32); o += V * E
-scale = np.frombuffer(raw[o:o + 4 * V], dtype=">f4").astype(np.float32); o += 4 * V
-layers = []
-if magic == b"TNW3":
-    for _ in range(L):
-        no, ni = struct.unpack(">ii", raw[o:o + 8]); o += 8
-        w = np.frombuffer(raw[o:o + 4 * no * ni], dtype=">f4").astype(np.float32).reshape(no, ni); o += 4 * no * ni
-        b = np.frombuffer(raw[o:o + 4 * no], dtype=">f4").astype(np.float32); o += 4 * no
-        layers.append((w, b))
-else:
-    w1 = np.frombuffer(raw[o:o + 4 * E * KK * E], dtype=">f4").astype(np.float32).reshape(E, KK * E); o += 4 * E * KK * E
-    b1 = np.frombuffer(raw[o:o + 4 * E], dtype=">f4").astype(np.float32); o += 4 * E
-    layers.append((w1, b1))
-bout = np.frombuffer(raw[o:o + 4 * V], dtype=">f4").astype(np.float32)
+net = tnw.read_tnw(bin_path)
+q = net["q"]
+scale = net["scale"]
+bout = net["bout"]
+layers = net["layers"]
+KK = net["K"]
 
 def nn_logits(ctx):
     ctx = ([BOS] * KK + ctx)[-KK:]

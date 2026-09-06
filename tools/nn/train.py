@@ -25,6 +25,8 @@ import struct
 import sys
 import time
 
+from tools.nn import tnw
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -182,38 +184,20 @@ def main():
     print(f"val ppl {math.exp(nll/total):.1f}  top1 {hits/total:.3f}  top3 {top3/total:.3f}")
 
     # ---- export ----------------------------------------------------------------------
-    # TNW3: any number of dense layers in the trunk. Header V, K, E, L; then the int8 embedding
-    # table and its per-row scales, then L layers as (out, in, W row-major, b), then the output
-    # bias. A one-layer trunk is the old TNW2 network in the new envelope; the app reads both.
-    emb = model.emb.weight.detach().cpu().numpy().astype(np.float32)
-    lin = [m for m in model.trunk if isinstance(m, nn.Linear)]
-    bout = model.bout.detach().cpu().numpy().astype(np.float32)
-    scale = np.maximum(np.abs(emb).max(axis=1) / 127.0, 1e-8).astype(np.float32)
-    q = np.clip(np.round(emb / scale[:, None]), -127, 127).astype(np.int8)
-
     out = f"{out_dir}/en_nextword.bin"
-    with open(out, "wb") as f:
-        f.write(b"TNW3")
-        f.write(struct.pack(">iiii", V, K, E, len(lin)))
-        f.write(q.tobytes())
-        f.write(scale.astype(">f4").tobytes())
-        for m in lin:
-            w = m.weight.detach().cpu().numpy().astype(np.float32)
-            b = m.bias.detach().cpu().numpy().astype(np.float32)
-            f.write(struct.pack(">ii", w.shape[0], w.shape[1]))
-            f.write(w.astype(">f4").tobytes())
-            f.write(b.astype(">f4").tobytes())
-        f.write(bout.astype(">f4").tobytes())
-    print(f"wrote {out} ({len(lin)} trunk layer(s), {sum(m.weight.numel() + m.bias.numel() for m in lin) / 1e6:.2f}M trunk params)")
+    # Use export_tnw3 to write the file; returns metadata dict
+    tnw.export_tnw3(model, out, K)
 
     # golden vector for the Kotlin test: context ids + expected top ids/logits (quantized path)
+    # Reconstruct the quantized state from what export_tnw3 just wrote
+    net = tnw.read_tnw(out)
     ctx = va_ctx[0].tolist()
-    h = (q[ctx].astype(np.float32) * scale[ctx, None]).flatten()
-    for m in lin:
-        h = np.maximum(m.weight.detach().cpu().numpy() @ h + m.bias.detach().cpu().numpy(), 0)
+    h = (net["q"][ctx].astype(np.float32) * net["scale"][ctx, None]).flatten()
+    for w, b in net["layers"]:
+        h = np.maximum(w @ h + b, 0)
     hs = max(np.abs(h).max() / 127.0, 1e-8)
     hq = np.clip(np.round(h / hs), -127, 127).astype(np.int32)
-    logits = (q.astype(np.int32) @ hq) * scale * hs + bout
+    logits = (net["q"] @ hq) * net["scale"] * hs + net["bout"]
     top = np.argsort(-logits)[:5]
     json.dump(
         {"context": ctx, "top_ids": top.tolist(), "top_logits": logits[top].tolist()},
