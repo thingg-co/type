@@ -17,6 +17,7 @@ K = 3
 
 val_path = sys.argv[1]
 limit = int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else 50000
+bin_path = sys.argv[sys.argv.index("--bin") + 1] if "--bin" in sys.argv else "app/src/main/assets/en_nextword.bin"
 
 words = [w.strip() for w in open("app/src/main/assets/en_words.txt", encoding="utf-8")]
 ids = {w: i for i, w in enumerate(words)}
@@ -43,19 +44,32 @@ def bigram_score(prev, nxt):
     return int(bscores[i]) if i < bn and bkeys[i] == k else 0
 
 # network (quantized arithmetic, mirroring the app)
-raw = open("app/src/main/assets/en_nextword.bin", "rb").read()
-V, KK, E = struct.unpack(">iii", raw[4:16])
-o = 16
+raw = open(bin_path, "rb").read()
+magic = raw[:4]
+if magic == b"TNW3":
+    V, KK, E, L = struct.unpack(">iiii", raw[4:20]); o = 20
+else:
+    V, KK, E = struct.unpack(">iii", raw[4:16]); L = 1; o = 16
 q = np.frombuffer(raw[o:o + V * E], dtype=np.int8).reshape(V, E).astype(np.int32); o += V * E
 scale = np.frombuffer(raw[o:o + 4 * V], dtype=">f4").astype(np.float32); o += 4 * V
-w1 = np.frombuffer(raw[o:o + 4 * E * KK * E], dtype=">f4").astype(np.float32).reshape(E, KK * E); o += 4 * E * KK * E
-b1 = np.frombuffer(raw[o:o + 4 * E], dtype=">f4").astype(np.float32); o += 4 * E
+layers = []
+if magic == b"TNW3":
+    for _ in range(L):
+        no, ni = struct.unpack(">ii", raw[o:o + 8]); o += 8
+        w = np.frombuffer(raw[o:o + 4 * no * ni], dtype=">f4").astype(np.float32).reshape(no, ni); o += 4 * no * ni
+        b = np.frombuffer(raw[o:o + 4 * no], dtype=">f4").astype(np.float32); o += 4 * no
+        layers.append((w, b))
+else:
+    w1 = np.frombuffer(raw[o:o + 4 * E * KK * E], dtype=">f4").astype(np.float32).reshape(E, KK * E); o += 4 * E * KK * E
+    b1 = np.frombuffer(raw[o:o + 4 * E], dtype=">f4").astype(np.float32); o += 4 * E
+    layers.append((w1, b1))
 bout = np.frombuffer(raw[o:o + 4 * V], dtype=">f4").astype(np.float32)
 
 def nn_logits(ctx):
     ctx = ([BOS] * KK + ctx)[-KK:]
-    x = (q[ctx].astype(np.float32) * scale[ctx, None]).flatten()
-    h = np.maximum(w1 @ x + b1, 0)
+    h = (q[ctx].astype(np.float32) * scale[ctx, None]).flatten()
+    for w, b in layers:
+        h = np.maximum(w @ h + b, 0)
     hs = max(np.abs(h).max() / 127.0, 1e-8)
     hq = np.clip(np.round(h / hs), -127, 127).astype(np.int32)
     return (q @ hq) * scale * hs + bout

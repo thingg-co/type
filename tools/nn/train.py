@@ -6,7 +6,7 @@ concat -> ReLU hidden (128) -> logits over the whole vocab through the tied embe
 matrix plus an output bias. Contexts are left-padded with BOS at sentence starts.
 
 Export (en_nextword.bin, big-endian to match the app's DataInputStream):
-  magic 'TNW1'
+  magic 'TNW3' (see the export block; TNW1/TNW2 were the one-layer layout)
   int32 V(total incl. BOS+UNK), int32 K, int32 E
   emb:   V rows of E int8            (per-row scale = absmax/127)
   scale: V float32
@@ -66,13 +66,13 @@ def windows(stream, V):
 
 
 class NextWord(nn.Module):
-    def __init__(self, V, E, layers=1, hidden=256):
+    def __init__(self, V, E, layers=1, hidden=256, dropout=0.0):
         super().__init__()
         self.emb = nn.Embedding(V, E)
         dims = [K * E] + [hidden] * (layers - 1) + [E]
         mods = []
         for i in range(len(dims) - 1):
-            mods += [nn.Linear(dims[i], dims[i + 1]), nn.ReLU()]
+            mods += [nn.Linear(dims[i], dims[i + 1]), nn.ReLU()] + ([nn.Dropout(dropout)] if dropout else [])
         self.trunk = nn.Sequential(*mods)
         self.bout = nn.Parameter(torch.zeros(V))
         nn.init.normal_(self.emb.weight, std=0.02)
@@ -95,10 +95,12 @@ def main():
     hidden = int(args[args.index("--hidden") + 1]) if "--hidden" in args else 256
     negs = int(args[args.index("--negs") + 1]) if "--negs" in args else 8192
     full = "--full-softmax" in args
+    wd = float(args[args.index("--wd") + 1]) if "--wd" in args else 0.01
+    dropout = float(args[args.index("--dropout") + 1]) if "--dropout" in args else 0.0
 
     n_words = sum(1 for _ in open("app/src/main/assets/en_words.txt", encoding="utf-8"))
     V = n_words + 2  # BOS, UNK
-    dev = "mps" if torch.backends.mps.is_available() else "cpu"
+    dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"V={V} E={E} K={K} steps={steps} device={dev}")
 
     cache = f"{data_dir}/win_k{K}.npz"
@@ -112,9 +114,9 @@ def main():
         np.savez(cache, tc=tr_ctx, tt=tr_tgt, vc=va_ctx, vt=va_tgt)
     print(f"train windows {len(tr_tgt)}, val {len(va_tgt)}")
 
-    model = NextWord(V, E, layers, hidden).to(dev)
+    model = NextWord(V, E, layers, hidden, dropout).to(dev)
     print(f"layers={layers} hidden={hidden} params={sum(p.numel() for p in model.parameters())}")
-    opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=0.01)
+    opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps, eta_min=3e-4)
 
     tr_ctx_t = torch.from_numpy(tr_ctx)
@@ -160,15 +162,18 @@ def main():
         if step % 1000 == 0 or step == 1:
             print(f"step {step} loss {loss.item():.3f} ({(time.time()-t0):.0f}s)", flush=True)
 
-    # validation: perplexity and top-3 next-word hit rate
-    model.eval()
+    # validation: perplexity and top-3 next-word hit rate. On CPU: MPS silently
+    # corrupts the topk/eq reductions at 126k-wide logits (observed: top1 counts in
+    # the billions, top1 > top3).
+    model_cpu = model.to("cpu")
+    model_cpu.eval()
     hits = top3 = total = 0
     nll = 0.0
     with torch.no_grad():
         for i in range(0, len(va_tgt), 8192):
-            ctx = torch.from_numpy(va_ctx[i:i + 8192]).to(dev)
-            tgt = torch.from_numpy(va_tgt[i:i + 8192]).to(dev)
-            logits = model(ctx)
+            ctx = torch.from_numpy(va_ctx[i:i + 8192])
+            tgt = torch.from_numpy(va_tgt[i:i + 8192])
+            logits = model_cpu(ctx)
             nll += F.cross_entropy(logits, tgt, reduction="sum").item()
             top = logits.topk(3, dim=1).indices
             hits += (top[:, 0] == tgt).sum().item()
@@ -177,31 +182,35 @@ def main():
     print(f"val ppl {math.exp(nll/total):.1f}  top1 {hits/total:.3f}  top3 {top3/total:.3f}")
 
     # ---- export ----------------------------------------------------------------------
-    if layers != 1:
-        print("multi-layer trunk: TNW1 export skipped (vetting run)")
-        return
+    # TNW3: any number of dense layers in the trunk. Header V, K, E, L; then the int8 embedding
+    # table and its per-row scales, then L layers as (out, in, W row-major, b), then the output
+    # bias. A one-layer trunk is the old TNW2 network in the new envelope; the app reads both.
     emb = model.emb.weight.detach().cpu().numpy().astype(np.float32)
-    w1 = model.trunk[0].weight.detach().cpu().numpy().astype(np.float32)
-    b1 = model.trunk[0].bias.detach().cpu().numpy().astype(np.float32)
+    lin = [m for m in model.trunk if isinstance(m, nn.Linear)]
     bout = model.bout.detach().cpu().numpy().astype(np.float32)
     scale = np.maximum(np.abs(emb).max(axis=1) / 127.0, 1e-8).astype(np.float32)
     q = np.clip(np.round(emb / scale[:, None]), -127, 127).astype(np.int8)
 
     out = f"{out_dir}/en_nextword.bin"
     with open(out, "wb") as f:
-        f.write(b"TNW2")  # BOS is a trained end-of-sentence target (see windows())
-        f.write(struct.pack(">iii", V, K, E))
+        f.write(b"TNW3")
+        f.write(struct.pack(">iiii", V, K, E, len(lin)))
         f.write(q.tobytes())
         f.write(scale.astype(">f4").tobytes())
-        f.write(w1.astype(">f4").tobytes())
-        f.write(b1.astype(">f4").tobytes())
+        for m in lin:
+            w = m.weight.detach().cpu().numpy().astype(np.float32)
+            b = m.bias.detach().cpu().numpy().astype(np.float32)
+            f.write(struct.pack(">ii", w.shape[0], w.shape[1]))
+            f.write(w.astype(">f4").tobytes())
+            f.write(b.astype(">f4").tobytes())
         f.write(bout.astype(">f4").tobytes())
-    print(f"wrote {out}")
+    print(f"wrote {out} ({len(lin)} trunk layer(s), {sum(m.weight.numel() + m.bias.numel() for m in lin) / 1e6:.2f}M trunk params)")
 
     # golden vector for the Kotlin test: context ids + expected top ids/logits (quantized path)
     ctx = va_ctx[0].tolist()
-    e = q[ctx].astype(np.float32) * scale[ctx, None]
-    h = np.maximum(w1 @ e.flatten() + b1, 0)
+    h = (q[ctx].astype(np.float32) * scale[ctx, None]).flatten()
+    for m in lin:
+        h = np.maximum(m.weight.detach().cpu().numpy() @ h + m.bias.detach().cpu().numpy(), 0)
     hs = max(np.abs(h).max() / 127.0, 1e-8)
     hq = np.clip(np.round(h / hs), -127, 127).astype(np.int32)
     logits = (q.astype(np.int32) @ hq) * scale * hs + bout

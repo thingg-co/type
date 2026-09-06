@@ -120,16 +120,14 @@ class Personalizer(private val base: NeuralLm) {
             for (j in 0 until e) od[j] = clamp(od[j] - LR * (g * h[j] + DECAY * od[j]))
             bias[id] = ((bias[id] ?: 0f) - LR * (g + DECAY * (bias[id] ?: 0f))).coerceIn(-BIAS_CLAMP, BIAS_CLAMP)
         }
-        // through ReLU (h==0 kills the grad) and the frozen trunk back to the context rows
-        val w1 = base.trunkW()
-        for (j in 0 until e) if (h[j] <= 0f) dh[j] = 0f
+        // through the frozen trunk (every layer's ReLU and weights) back to the context rows
+        val gIn = base.backpropToInput(hidden, dh)
         for (slot in 0 until k) {
             val id = ctx[slot]
             if (id >= base.bos) continue
             val d = inputDelta.getOrPut(id) { FloatArray(e) }
             for (x in 0 until e) {
-                var g = 0f
-                for (j in 0 until e) g += w1[j * k * e + slot * e + x] * dh[j]
+                val g = gIn[slot * e + x]
                 d[x] = clamp(d[x] - LR * (g + DECAY * d[x]))
             }
         }

@@ -30,7 +30,11 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   decides — thresholds calibrated by tools/confusables_calibrate.py + ConfusableCalibrationHarness,
   pinned by ConfusableMarginProbeTest. `Lexer` finds previous tokens;
   `NeuralLm` (assets/en_nextword.bin, trained/exported by tools/nn/train.py, golden-vector
-  tested) predicts and ranks by a K-word window (K in the asset header, currently 4) with `Bigrams` (assets/en_bigrams.bin,
+  tested) predicts and ranks by a K-word window (K in the asset header, currently 8) through a
+  dense trunk of one or more layers (TNW3 layout: header V, K, E, L; per layer out, in, W, b;
+  TNW1/TNW2 one-layer assets still load). Two layers of 512 beat one on held-out text; three do
+  not. Train on the Spark (CUDA, ~17 min per 60k steps) rather than the Mac (MPS corrupts the
+  126k-wide top-k in eval) with `Bigrams` (assets/en_bigrams.bin,
   tools/build_bigrams.py) as fallback; `Personalizer` learns sparse per-user deltas over the
   frozen network (state in files/personal.bin, shape-checked); `TypingPolicy` combines them.
   Word ids in BOTH binary

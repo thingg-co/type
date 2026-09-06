@@ -25,15 +25,17 @@ class NeuralLm private constructor(
     val dim: Int,
     private val emb: ByteArray,      // vocab x dim, int8
     private val scale: FloatArray,   // vocab
-    private val w1: FloatArray,      // dim x (k*dim), row-major
-    private val b1: FloatArray,      // dim
+    private val layers: List<Layer>, // dense trunk: relu(W x + b) per layer, last one produces `dim` values
     private val bout: FloatArray,    // vocab
     private val nativeTopK: ((ByteArray, Float, Int) -> IntArray?)? = null,
 ) {
+    /** One dense trunk layer, row-major (out x in). */
+    class Layer(val outDim: Int, val inDim: Int, val w: FloatArray, val b: FloatArray)
+
     val bos: Int get() = vocab - 2
     val unk: Int get() = vocab - 1
 
-    /** True when the asset trained BOS as an end-of-sentence target (TNW2). */
+    /** True when the asset trained BOS as an end-of-sentence target (TNW2+). */
     var eosTrained: Boolean = false
         internal set
 
@@ -41,7 +43,10 @@ class NeuralLm private constructor(
     @Volatile
     var personal: Personalizer? = null
 
-    class Hidden(val q: ByteArray, val scale: Float, val f: FloatArray)
+    /** The trunk output quantized for the int8 dot products, its scale, the float output, and the
+     * activations entering each layer (the context rows first), kept so the personaliser can send a
+     * gradient back through the trunk. */
+    class Hidden(val q: ByteArray, val scale: Float, val f: FloatArray, internal val acts: List<FloatArray>)
 
     internal fun embRowInto(id: Int, out: FloatArray) {
         val row = id * dim
@@ -49,9 +54,7 @@ class NeuralLm private constructor(
         for (j in 0 until dim) out[j] = emb[row + j] * s
     }
 
-    internal fun trunkW(): FloatArray = w1
-
-    internal fun trunkB(): FloatArray = b1
+    internal fun trunkLayers(): List<Layer> = layers
 
     /** Left-pads with BOS, maps unknown ids to UNK, and runs the dense trunk. */
     fun hidden(contextIds: List<Int>): Hidden {
@@ -61,7 +64,7 @@ class NeuralLm private constructor(
             val id = if (idx < 0) bos else contextIds[idx]
             ctx[i] = if (id in 0 until vocab) id else unk
         }
-        val x = FloatArray(k * dim)
+        var x = FloatArray(k * dim)
         for (i in 0 until k) {
             val row = ctx[i] * dim
             val s = scale[ctx[i]]
@@ -70,20 +73,49 @@ class NeuralLm private constructor(
                 for (j in 0 until dim) x[i * dim + j] += d[j]
             }
         }
-        val h = FloatArray(dim)
-        var absMax = 1e-8f
-        for (o in 0 until dim) {
-            var acc = b1[o]
-            val wRow = o * k * dim
-            for (j in 0 until k * dim) acc += w1[wRow + j] * x[j]
-            val r = if (acc > 0f) acc else 0f
-            h[o] = r
-            if (r > absMax) absMax = r
+        val acts = ArrayList<FloatArray>(layers.size)
+        for (L in layers) {
+            acts.add(x)
+            val h = FloatArray(L.outDim)
+            for (o in 0 until L.outDim) {
+                var acc = L.b[o]
+                val wRow = o * L.inDim
+                val w = L.w
+                for (j in 0 until L.inDim) acc += w[wRow + j] * x[j]
+                h[o] = if (acc > 0f) acc else 0f
+            }
+            x = h
         }
+        val h = x
+        var absMax = 1e-8f
+        for (o in 0 until dim) if (h[o] > absMax) absMax = h[o]
         val hs = absMax / 127f
         val q = ByteArray(dim)
         for (o in 0 until dim) q[o] = (h[o] / hs + 0.5f).toInt().coerceIn(-127, 127).toByte()
-        return Hidden(q, hs, h)
+        return Hidden(q, hs, h, acts)
+    }
+
+    /** Sends a gradient on the trunk output back to the context rows (k*dim values), through every
+     * layer's ReLU and frozen weights. Used by the personaliser's input-side learning. */
+    internal fun backpropToInput(hidden: Hidden, dOut: FloatArray): FloatArray {
+        var g = dOut
+        for (li in layers.indices.reversed()) {
+            val L = layers[li]
+            val input = hidden.acts[li]
+            // the layer's output activation is the next layer's input, or the trunk output for the last
+            val out = if (li + 1 < layers.size) hidden.acts[li + 1] else hidden.f
+            val gIn = FloatArray(L.inDim)
+            for (o in 0 until L.outDim) {
+                if (out[o] <= 0f) continue                  // ReLU: dead units pass nothing back
+                val go = g[o]
+                if (go == 0f) continue
+                val wRow = o * L.inDim
+                for (j in 0 until L.inDim) gIn[j] += L.w[wRow + j] * go
+            }
+            g = gIn
+            if (input.size != L.inDim) break
+        }
+        return g
     }
 
     /** Logit of word [id] given a computed [hidden] state, personal delta included. */
@@ -149,19 +181,27 @@ class NeuralLm private constructor(
             DataInputStream(input.buffered(1 shl 16)).use { d ->
                 val magic = ByteArray(4)
                 d.readFully(magic)
-                // TNW2 additionally trained BOS as an end-of-sentence target, so
-                // logit(bos) means "the message ends here"; TNW1 never did.
-                val eosTrained = magic.contentEquals("TNW2".toByteArray())
-                if (!eosTrained && !magic.contentEquals("TNW1".toByteArray())) throw IOException("bad nextword file")
+                val tag = String(magic)
+                // TNW1: one dense layer, BOS never a target. TNW2: same layout, BOS trained as the
+                // end-of-sentence target. TNW3: any number of dense layers, BOS trained.
+                if (tag != "TNW1" && tag != "TNW2" && tag != "TNW3") throw IOException("bad nextword file")
                 val v = d.readInt()
                 val k = d.readInt()
                 val e = d.readInt()
+                val nLayers = if (tag == "TNW3") d.readInt() else 1
                 val emb = ByteArray(v * e).also { d.readFully(it) }
                 val scale = FloatArray(v) { d.readFloat() }
-                val w1 = FloatArray(e * k * e) { d.readFloat() }
-                val b1 = FloatArray(e) { d.readFloat() }
+                val layers = ArrayList<Layer>(nLayers)
+                for (i in 0 until nLayers) {
+                    val outDim = if (tag == "TNW3") d.readInt() else e
+                    val inDim = if (tag == "TNW3") d.readInt() else k * e
+                    val w = FloatArray(outDim * inDim) { d.readFloat() }
+                    val b = FloatArray(outDim) { d.readFloat() }
+                    layers.add(Layer(outDim, inDim, w, b))
+                }
+                if (layers.last().outDim != e) throw IOException("nextword trunk must end in the embedding width")
                 val bout = FloatArray(v) { d.readFloat() }
-                NeuralLm(v, k, e, emb, scale, w1, b1, bout, nativeTopK).also { it.eosTrained = eosTrained }
+                NeuralLm(v, k, e, emb, scale, layers, bout, nativeTopK).also { it.eosTrained = tag != "TNW1" }
             }
 
         fun load(context: android.content.Context, asset: String = "en_nextword.bin"): NeuralLm {
