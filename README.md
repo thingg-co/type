@@ -17,8 +17,8 @@ Site: https://thingg-co.github.io/type/
   on-device neural network (eight-word window, two 1024-wide layers, 192-d, int8, trained on 93M
   words by tools/nn/, a third of them film and TV dialogue)
   suggests the next word after each space and ranks completions ("should ha" puts "have"
-  first). On held-out news and encyclopedic text it hits top-3 next-word 37.5% vs 19.7% for the
-  bigram table it replaced, and on held-out dialogue 32.7% vs 16.8%; the bigram table stays as
+  first). On held-out news and encyclopedic text it hits top-3 next-word 38.0% vs 19.7% for the
+  bigram table it replaced, and on held-out dialogue 33.1% vs 16.8%; the bigram table stays as
   an instant fallback. If what you typed cannot start
   any dictionary word, dictionary candidates appear immediately and the correction model is
   asked after a short pause.
