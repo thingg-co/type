@@ -35,9 +35,14 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   `NeuralLm` (assets/en_nextword.bin, trained/exported by tools/nn/train.py, golden-vector
   tested) predicts and ranks by a K-word window (K in the asset header, currently 8) through a
   dense trunk of one or more layers (TNW3 layout: header V, K, E, L; per layer out, in, W, b;
-  TNW1/TNW2 one-layer assets still load). The shipped net is two layers of 1024 trained on the
-  mixed corpus (0.7.3); two layers beat one, three do not, and width past 1024 buys nothing at
-  this data size. Train on the Spark (CUDA, ~17 min per 60k steps) rather than the Mac (MPS corrupts the
+  TNW1/TNW2 one-layer assets still load; TNW5 is a recurrent trunk: header V, E, H, L, then per
+  GRU layer W_ih, W_hh, b_ih, b_hh in PyTorch gate order and a linear map back to E, trained by
+  tools/nn/train_gru.py on whole sentences). A recurrent net gets the whole sentence as context
+  (`contextWords`, 40) and keeps the state after every position of the last prefix, so a word
+  costs one GRU step; the dense nets keep their five-word context. The dense sweep ended at two
+  layers of 1024 on the mixed corpus (0.7.4): two layers beat one, three do not, and width past
+  1024 or more dialogue data buys nothing at that size; the recurrent trunk is where the next
+  gains came from. Train on the Spark (CUDA, ~17 min per 60k steps) rather than the Mac (MPS corrupts the
   126k-wide top-k in eval). The format lives in tools/nn/tnw.py (export, reader, and the exact
   quantized forward the app mirrors; TNW4 adds an untied output table, which trained worse under
   the sampled softmax and is not used). A sweep is a json of runs for tools/nn/sweep.py, which
