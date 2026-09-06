@@ -28,9 +28,23 @@ class NeuralLm private constructor(
     private val layers: List<Layer>, // dense trunk: relu(W x + b) per layer, last one produces `dim` values
     private val bout: FloatArray,    // vocab
     private val nativeTopK: ((ByteArray, Float, Int) -> IntArray?)? = null,
+    private val recurrent: Recurrent? = null, // TNW5: a GRU trunk instead of the dense layers
 ) {
     /** One dense trunk layer, row-major (out x in). */
     class Layer(val outDim: Int, val inDim: Int, val w: FloatArray, val b: FloatArray)
+
+    /** One GRU layer, PyTorch layout: gate rows stacked (r, z, n), each [hidden] rows, row-major. */
+    class GruLayer(val inDim: Int, val hidden: Int, val wIh: FloatArray, val wHh: FloatArray, val bIh: FloatArray, val bHh: FloatArray)
+
+    /**
+     * A recurrent trunk (TNW5): the sentence so far, one word at a time, through [layers], then a
+     * linear map back to the embedding width so the vocabulary product is the same int8 dot
+     * product as for the dense trunk.
+     */
+    class Recurrent(val layers: List<GruLayer>, val projW: FloatArray, val projB: FloatArray)
+
+    /** True for a recurrent (TNW5) network; its context is the whole sentence, not a window. */
+    val isRecurrent: Boolean get() = recurrent != null
 
     val bos: Int get() = vocab - 2
     val unk: Int get() = vocab - 1
@@ -56,8 +70,9 @@ class NeuralLm private constructor(
 
     internal fun trunkLayers(): List<Layer> = layers
 
-    /** Left-pads with BOS, maps unknown ids to UNK, and runs the dense trunk. */
+    /** Left-pads with BOS, maps unknown ids to UNK, and runs the trunk. */
     fun hidden(contextIds: List<Int>): Hidden {
+        recurrent?.let { return recurrentHidden(it, contextIds) }
         val ctx = IntArray(k)
         for (i in 0 until k) {
             val idx = contextIds.size - k + i
@@ -95,9 +110,100 @@ class NeuralLm private constructor(
         return Hidden(q, hs, h, acts)
     }
 
+    // ---- recurrent trunk -----------------------------------------------------------------
+
+    private val cacheLock = Any()
+    private var cachedIds = IntArray(0)                 // [BOS, w1, ...] the states below have consumed
+    private var cachedStates: Array<FloatArray> = emptyArray()   // per layer, after cachedIds
+
+    /**
+     * Runs the GRU over BOS plus the context (its last [k] words, leading BOS padding dropped).
+     * The confusable checks score several one-word extensions of the same prefix in a row, so the
+     * last prefix's states are kept: an extension costs one step per new word, a new sentence a
+     * full pass.
+     */
+    private fun recurrentHidden(r: Recurrent, contextIds: List<Int>): Hidden {
+        val words = contextIds.dropWhile { it == bos }.let { if (it.size > k) it.subList(it.size - k, it.size) else it }
+        val ids = IntArray(words.size + 1)
+        ids[0] = bos
+        for (i in words.indices) ids[i + 1] = words[i].let { if (it in 0 until vocab) it else unk }
+        val nLayers = r.layers.size
+        val states: Array<FloatArray>
+        val from: Int
+        synchronized(cacheLock) {
+            val reuse = cachedIds.isNotEmpty() && cachedIds.size <= ids.size &&
+                (0 until cachedIds.size).all { ids[it] == cachedIds[it] }
+            if (reuse) {
+                states = Array(nLayers) { cachedStates[it].copyOf() }
+                from = cachedIds.size
+            } else {
+                states = Array(nLayers) { FloatArray(r.layers[it].hidden) }
+                from = 0
+            }
+        }
+        val x0 = FloatArray(dim)
+        for (t in from until ids.size) {
+            embRowInto(ids[t], x0)
+            personal?.inputDelta(ids[t])?.let { d -> for (j in 0 until dim) x0[j] += d[j] }
+            var x = x0
+            for (l in 0 until nLayers) {
+                states[l] = gruStep(r.layers[l], x, states[l])
+                x = states[l]
+            }
+        }
+        synchronized(cacheLock) {
+            cachedIds = ids
+            cachedStates = Array(nLayers) { states[it].copyOf() }
+        }
+        val top = states[nLayers - 1]
+        val hTop = r.layers[nLayers - 1].hidden
+        val v = FloatArray(dim)
+        for (o in 0 until dim) {
+            var acc = r.projB[o]
+            val row = o * hTop
+            for (j in 0 until hTop) acc += r.projW[row + j] * top[j]
+            v[o] = acc
+        }
+        // The projection is signed, unlike a ReLU output: scale by the absolute maximum, round to nearest.
+        var absMax = 1e-8f
+        for (o in 0 until dim) { val a = kotlin.math.abs(v[o]); if (a > absMax) absMax = a }
+        val vs = absMax / 127f
+        val q = ByteArray(dim)
+        for (o in 0 until dim) q[o] = Math.round(v[o] / vs).coerceIn(-127, 127).toByte()
+        return Hidden(q, vs, v, emptyList())
+    }
+
+    private fun gruStep(L: GruLayer, x: FloatArray, h: FloatArray): FloatArray {
+        val H = L.hidden
+        val gi = FloatArray(3 * H)
+        val gh = FloatArray(3 * H)
+        for (o in 0 until 3 * H) {
+            var a = L.bIh[o]
+            val rowI = o * L.inDim
+            for (j in 0 until L.inDim) a += L.wIh[rowI + j] * x[j]
+            gi[o] = a
+            var b = L.bHh[o]
+            val rowH = o * H
+            for (j in 0 until H) b += L.wHh[rowH + j] * h[j]
+            gh[o] = b
+        }
+        val out = FloatArray(H)
+        for (j in 0 until H) {
+            val rGate = sigmoid(gi[j] + gh[j])
+            val zGate = sigmoid(gi[H + j] + gh[H + j])
+            val n = kotlin.math.tanh(gi[2 * H + j] + rGate * gh[2 * H + j])
+            out[j] = (1f - zGate) * n + zGate * h[j]
+        }
+        return out
+    }
+
+    private fun sigmoid(x: Float): Float = 1f / (1f + kotlin.math.exp(-x))
+
     /** Sends a gradient on the trunk output back to the context rows (k*dim values), through every
-     * layer's ReLU and frozen weights. Used by the personaliser's input-side learning. */
+     * layer's ReLU and frozen weights. Used by the personaliser's input-side learning. Empty for a
+     * recurrent trunk, which learns on the output side only. */
     internal fun backpropToInput(hidden: Hidden, dOut: FloatArray): FloatArray {
+        if (recurrent != null) return FloatArray(0)
         var g = dOut
         for (li in layers.indices.reversed()) {
             val L = layers[li]
@@ -183,7 +289,9 @@ class NeuralLm private constructor(
                 d.readFully(magic)
                 val tag = String(magic)
                 // TNW1: one dense layer, BOS never a target. TNW2: same layout, BOS trained as the
-                // end-of-sentence target. TNW3: any number of dense layers, BOS trained.
+                // end-of-sentence target. TNW3: any number of dense layers, BOS trained. TNW5: a GRU
+                // trunk over the whole sentence, then a linear map back to the embedding width.
+                if (tag == "TNW5") return loadRecurrent(d, nativeTopK)
                 if (tag != "TNW1" && tag != "TNW2" && tag != "TNW3") throw IOException("bad nextword file")
                 val v = d.readInt()
                 val k = d.readInt()
@@ -203,6 +311,32 @@ class NeuralLm private constructor(
                 val bout = FloatArray(v) { d.readFloat() }
                 NeuralLm(v, k, e, emb, scale, layers, bout, nativeTopK).also { it.eosTrained = tag != "TNW1" }
             }
+
+        /** Sentences in training were cut at this many words; the context passed in is trimmed to it. */
+        private const val RECURRENT_WINDOW = 40
+
+        private fun loadRecurrent(d: DataInputStream, nativeTopK: ((ByteArray, Float, Int) -> IntArray?)?): NeuralLm {
+            val v = d.readInt()
+            val e = d.readInt()
+            val h = d.readInt()
+            val nLayers = d.readInt()
+            val emb = ByteArray(v * e).also { d.readFully(it) }
+            val scale = FloatArray(v) { d.readFloat() }
+            val layers = ArrayList<GruLayer>(nLayers)
+            for (i in 0 until nLayers) {
+                val inDim = if (i == 0) e else h
+                val wIh = FloatArray(3 * h * inDim) { d.readFloat() }
+                val wHh = FloatArray(3 * h * h) { d.readFloat() }
+                val bIh = FloatArray(3 * h) { d.readFloat() }
+                val bHh = FloatArray(3 * h) { d.readFloat() }
+                layers.add(GruLayer(inDim, h, wIh, wHh, bIh, bHh))
+            }
+            val projW = FloatArray(e * h) { d.readFloat() }
+            val projB = FloatArray(e) { d.readFloat() }
+            val bout = FloatArray(v) { d.readFloat() }
+            return NeuralLm(v, RECURRENT_WINDOW, e, emb, scale, emptyList(), bout, nativeTopK, Recurrent(layers, projW, projB))
+                .also { it.eosTrained = true }
+        }
 
         fun load(context: android.content.Context, asset: String = "en_nextword.bin"): NeuralLm {
             val t0 = System.currentTimeMillis()
