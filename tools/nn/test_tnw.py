@@ -14,7 +14,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from tools.nn import tnw
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tnw
 
 
 class TinyNextWord(nn.Module):
