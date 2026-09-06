@@ -15,6 +15,13 @@ import org.junit.Test
  */
 class NeuralLmTest {
 
+    private infix fun FloatArray.dot(other: FloatArray): Float {
+        require(this.size == other.size) { "Arrays must have same size" }
+        var sum = 0f
+        for (i in this.indices) sum += this[i] * other[i]
+        return sum
+    }
+
     @Test fun `kotlin inference matches the python export`() {
         val asset = File("src/main/assets/en_nextword.bin")
         val golden = File("../tools/nn/out/golden.json")
@@ -172,7 +179,7 @@ class NeuralLmTest {
 
                         if (!patternChanged2) {
                             // Finite difference of dot(forward(x), dOut)
-                            val fdDot = (yPlus2 dot dOut - yMinus2 dot dOut) / (2 * eps)
+                            val fdDot = ((yPlus2 dot dOut) - (yMinus2 dot dOut)) / (2f * eps)
                             assertEquals("finite diff at $j2", g[j2], fdDot, 1e-2f)
                             return@repeat
                         }
@@ -183,15 +190,8 @@ class NeuralLmTest {
             }
 
             // Finite difference: dot((f(x+eps) - f(x-eps)), dOut) / (2*eps)
-            val fdDot = (yPlus dot dOut - yMinus dot dOut) / (2 * eps)
+            val fdDot = ((yPlus dot dOut) - (yMinus dot dOut)) / (2f * eps)
             assertEquals("finite diff at $j", g[j], fdDot, 1e-2f)
         }
-    }
-
-    private infix fun FloatArray.dot(other: FloatArray): Float {
-        require(this.size == other.size) { "Arrays must have same size" }
-        var sum = 0f
-        for (i in this.indices) sum += this[i] * other[i]
-        return sum
     }
 }

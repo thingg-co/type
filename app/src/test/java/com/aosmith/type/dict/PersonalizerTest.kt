@@ -46,10 +46,10 @@ object TestNeural {
                 // each layer: out, in, W (row-major), b
                 for (i in 0 until layers) {
                     val out = dims[i + 1]
-                    val in = dims[i]
+                    val inDim = dims[i]
                     d.writeInt(out)
-                    d.writeInt(in)
-                    repeat(out * in) { d.writeFloat((rng.nextFloat() - 0.5f) * 0.2f) }
+                    d.writeInt(inDim)
+                    repeat(out * inDim) { d.writeFloat((rng.nextFloat() - 0.5f) * 0.2f) }
                     repeat(out) { d.writeFloat(0f) }
                 }
                 repeat(v) { d.writeFloat(0f) }
