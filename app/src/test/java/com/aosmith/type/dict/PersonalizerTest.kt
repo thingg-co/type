@@ -11,21 +11,49 @@ import org.junit.Test
 
 /** Builds a small random base network in the export format for tests. */
 object TestNeural {
-    fun build(vocabWords: Int = 14, k: Int = 3, e: Int = 8, seed: Long = 3): NeuralLm {
+    fun build(vocabWords: Int = 14, k: Int = 3, e: Int = 8, seed: Long = 3, layers: Int = 1, hidden: Int = 16): NeuralLm {
         val v = vocabWords + 2
         val rng = Random(seed)
         val bytes = ByteArrayOutputStream()
         DataOutputStream(bytes).use { d ->
-            d.write("TNW1".toByteArray())
-            d.writeInt(v)
-            d.writeInt(k)
-            d.writeInt(e)
-            val q = ByteArray(v * e) { (rng.nextInt(255) - 127).toByte() }
-            d.write(q)
-            repeat(v) { d.writeFloat(0.01f + rng.nextFloat() * 0.01f) }
-            repeat(e * k * e) { d.writeFloat((rng.nextFloat() - 0.5f) * 0.2f) }
-            repeat(e) { d.writeFloat(0f) }
-            repeat(v) { d.writeFloat(0f) }
+            if (layers == 1) {
+                // TNW1: one dense layer, BOS never a target
+                d.write("TNW1".toByteArray())
+                d.writeInt(v)
+                d.writeInt(k)
+                d.writeInt(e)
+                val q = ByteArray(v * e) { (rng.nextInt(255) - 127).toByte() }
+                d.write(q)
+                repeat(v) { d.writeFloat(0.01f + rng.nextFloat() * 0.01f) }
+                repeat(e * k * e) { d.writeFloat((rng.nextFloat() - 0.5f) * 0.2f) }
+                repeat(e) { d.writeFloat(0f) }
+                repeat(v) { d.writeFloat(0f) }
+            } else {
+                // TNW3: any number of dense layers
+                d.write("TNW3".toByteArray())
+                d.writeInt(v)
+                d.writeInt(k)
+                d.writeInt(e)
+                // dims: [k*e] + [hidden] * (layers - 1) + [e]
+                val dims = IntArray(layers + 1)
+                dims[0] = k * e
+                for (i in 1 until layers) dims[i] = hidden
+                dims[layers] = e
+                d.writeInt(layers)
+                val q = ByteArray(v * e) { (rng.nextInt(255) - 127).toByte() }
+                d.write(q)
+                repeat(v) { d.writeFloat(0.01f + rng.nextFloat() * 0.01f) }
+                // each layer: out, in, W (row-major), b
+                for (i in 0 until layers) {
+                    val out = dims[i + 1]
+                    val in = dims[i]
+                    d.writeInt(out)
+                    d.writeInt(in)
+                    repeat(out * in) { d.writeFloat((rng.nextFloat() - 0.5f) * 0.2f) }
+                    repeat(out) { d.writeFloat(0f) }
+                }
+                repeat(v) { d.writeFloat(0f) }
+            }
         }
         return NeuralLm.load(ByteArrayInputStream(bytes.toByteArray()))
     }
@@ -108,5 +136,34 @@ class PersonalizerTest {
         p.record(listOf(1), lm.unk)
         assertEquals(0, p.pendingSamples)
         assertTrue(lm.topNext(listOf(1), 5).all { it < lm.bos })
+    }
+
+    @Test fun `repetition teaches a two-layer model too`() {
+        val lm = TestNeural.build(layers = 2, hidden = 16)
+        val p = Personalizer(lm)
+        lm.personal = p
+
+        val ctx = listOf(2, 5)      // "purple quokka"-style pair
+        val target = 9
+        val otherCtx = listOf(1, 3)
+        val otherTopBefore = lm.topNext(otherCtx, 3)
+        val before = rankOf(lm, ctx, target)
+
+        repeat(60) { p.record(ctx, target) }
+        val f = createTempFile().toFile()
+        repeat(30) { p.trainAndMaybeSave(f, steps = 32) }
+
+        val after = rankOf(lm, ctx, target)
+        assertTrue("rank did not improve: $before -> $after", after < before || after == 0)
+        assertEquals(0, after) // heavy repetition should make it the top suggestion
+
+        // An untouched context must not be wrecked: its old top-1 stays near the front.
+        // (A genuinely dominant learned word MAY displace it by design - the bias is
+        // context-free on purpose - but never bury it.)
+        val otherTopAfter = lm.topNext(otherCtx, 5)
+        assertTrue(
+            "unrelated context disturbed: $otherTopBefore -> $otherTopAfter",
+            otherTopAfter.contains(otherTopBefore.first()),
+        )
     }
 }
