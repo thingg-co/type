@@ -114,6 +114,7 @@ def main(argv: list) -> None:
 
     random.seed(7)
     writer = Writer(out_dir, random)
+    skipped = 0
 
     for path in inputs:
         n0 = writer.kept
@@ -124,10 +125,12 @@ def main(argv: list) -> None:
                     ids = to_ids(words, vocab, UNK)
                     if keep_sentence(ids, UNK):
                         writer.emit(ids)
+                    else:
+                        skipped += 1
         print(f"{path}: {writer.kept - n0} sentences")
 
     writer.close()
-    print(f"kept {writer.kept} sentences ({writer.tokens} tokens), skipped high-unk")
+    print(f"kept {writer.kept} sentences ({writer.tokens} tokens), skipped {skipped} high-unk")
 
 
 if __name__ == "__main__":
