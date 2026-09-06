@@ -90,7 +90,7 @@ def write_binary(path: str, entries: list) -> None:
 def main(argv: list) -> None:
     """Main entry point."""
     src = argv[0]
-    cap = int(argv[1]) if len(argv) > 2 else 300_000
+    cap = int(argv[1]) if len(argv) > 1 else 300_000
 
     vocab_path = "app/src/main/assets/en_words.txt"
     words = [w.strip() for w in open(vocab_path, encoding="utf-8")]
