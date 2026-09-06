@@ -1,9 +1,12 @@
 """Tests for expand_vocab.py append-only vocabulary expansion."""
 import os
 import sys
+
+import pytest
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+pytest.importorskip("wordfreq")   # expand_vocab needs it; skip where the venv lacks it
 import expand_vocab
 
 
