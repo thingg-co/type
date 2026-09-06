@@ -38,17 +38,23 @@ object Confusables {
      * decides; below, the word is left alone.
      *
      * Calibrated for the 126k-vocabulary network (2026-09-01, Tatoeba held-out cases,
-     * ~0.25% false-positive budget). DIRECT at 4.0: 0.18% false flips / 52% catch.
+     * ~0.25% false-positive budget): DIRECT at 4.0 measured 0.18% false flips / 52% catch.
+     * Re-measured 2026-09-07 for the recurrent network on 21,000 dialogue cases, where every
+     * net runs hotter: it flips 0.59% of correct usage at 4.0 (the dense net 0.40%) and 0.33%
+     * at 5.0 with 58% catch, so the bar moved to 5.0; the lookback pass, which is where most
+     * of the catch lives, is unchanged.
      */
-    const val DIRECT_MARGIN = 4.0f
+    const val DIRECT_MARGIN = 5.0f
     const val MODEL_MARGIN = 2.0f
 
     /**
      * Margin for reconsidering the previous word once the word after it is known
      * ("your welcome": at "welcome", score P(variant|ctx) + P(welcome|ctx,variant)).
-     * Two log-prob terms, and the pass where the real signal lives: at 5.0 the new
-     * network measures 0.23% false flips / 75% catch. No model fallback here; the
-     * word prompt cannot ask about an earlier word.
+     * Two log-prob terms, and the pass where the real signal lives: at 5.0 the 126k
+     * network measured 0.23% false flips / 75% catch on Tatoeba; on the dialogue cases the
+     * recurrent network measures 0.35% / 86% at the same bar, against 0.43% / 79% for the
+     * dense net it replaced. No model fallback here; the word prompt cannot ask about an
+     * earlier word.
      */
     const val LOOKBACK_MARGIN = 5.0f
 

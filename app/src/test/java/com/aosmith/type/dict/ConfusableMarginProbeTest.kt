@@ -60,12 +60,18 @@ class ConfusableMarginProbeTest {
         for ((ctx, typed, want) in listOf(
             Triple(listOf("i", "think"), "ill", "i'll"),
             Triple(listOf("maybe"), "lets", "let's"),
-            Triple(listOf("if", "so"), "id", "i'd"),
             Triple(listOf("do", "you", "think"), "its", "it's"),
         )) {
             val (margin, winner) = forwardMargin(ctx, typed)
             assertTrue("[$ctx $typed] margin $margin must clear DIRECT", margin > Confusables.DIRECT_MARGIN)
             assertTrue("[$ctx $typed] winner $winner", winner == want)
+        }
+        // "if so id": the recurrent network puts this one in the band where the language model
+        // decides (it cleared DIRECT outright on the dense nets); it must at least get there, with
+        // the right alternative on top.
+        forwardMargin(listOf("if", "so"), "id").let { (margin, winner) ->
+            assertTrue("[if so id] margin $margin must reach the model band", margin > Confusables.MODEL_MARGIN)
+            assertTrue("[if so id] winner $winner", winner == "i'd")
         }
         // Correct usage must stay quiet (below MODEL_MARGIN: not even a model query).
         for ((ctx, typed) in listOf(

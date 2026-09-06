@@ -32,9 +32,9 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   swappable words (then/than, there/their/they're) whose margins the prediction network
   decides — thresholds calibrated by tools/confusables_calibrate.py + ConfusableCalibrationHarness,
   pinned by ConfusableMarginProbeTest. `Lexer` finds previous tokens;
-  `NeuralLm` (assets/en_nextword.bin, trained/exported by tools/nn/train.py, golden-vector
-  tested) predicts and ranks by a K-word window (K in the asset header, currently 8) through a
-  dense trunk of one or more layers (TNW3 layout: header V, K, E, L; per layer out, in, W, b;
+  `NeuralLm` (assets/en_nextword.bin; since 0.8.0 a recurrent TNW5 net from tools/nn/train_gru.py,
+  golden-vector tested) predicts and ranks from the sentence so far; the dense nets it replaced
+  used a K-word window through a trunk of one or more layers (TNW3 layout: header V, K, E, L; per layer out, in, W, b;
   TNW1/TNW2 one-layer assets still load; TNW5 is a recurrent trunk: header V, E, H, L, then per
   GRU layer W_ih, W_hh, b_ih, b_hh in PyTorch gate order and a linear map back to E, trained by
   tools/nn/train_gru.py on whole sentences). A recurrent net gets the whole sentence as context
