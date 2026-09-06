@@ -23,6 +23,8 @@ def main():
     parser.add_argument("run_dir", help="Path to the run directory")
     parser.add_argument("--dry-run", action="store_true", help="Don't copy files")
     parser.add_argument("--words", help="Path to en_words.txt (default: app/src/main/assets/en_words.txt)")
+    parser.add_argument("--app-dir", help="asset directory to stage into (default: app/src/main/assets)")
+    parser.add_argument("--out-dir", help="copy directory (default: tools/nn/out)")
     args = parser.parse_args()
 
     run_dir = args.run_dir
@@ -71,10 +73,10 @@ def main():
     K = net["K"]
     E = net["E"]
     L = net["L"]
-    file_size = os.path.getsize(bin_path) / (1024 * 1024)
+    file_size = os.path.getsize(bin_path) / 1e6
     layer_shapes = ", ".join(f"{w.shape[0]}x{w.shape[1]}" for w, _ in net["layers"])
 
-    print(f"TNW{net['magic'].decode()} V={V} K={K} E={E} L={L} layers=[{layer_shapes}] {file_size:.2f}MB")
+    print(f"{net['magic'].decode()} V={V} K={K} E={E} L={L} layers=[{layer_shapes}] {file_size:.2f}MB")
 
     if args.dry_run:
         print("[dry-run] no files copied")
@@ -103,6 +105,10 @@ def main():
         "app/src/main/assets"
     )
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+    if args.app_dir:
+        app_assets_dir = args.app_dir
+    if args.out_dir:
+        out_dir = args.out_dir
 
     os.makedirs(app_assets_dir, exist_ok=True)
     os.makedirs(out_dir, exist_ok=True)

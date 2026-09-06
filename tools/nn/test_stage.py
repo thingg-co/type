@@ -97,7 +97,7 @@ def test_stage_golden_check_passes(tmp_path, monkeypatch):
     # Run stage.py with --words pointing to our test words file
     from tools.nn import stage
 
-    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}"])
+    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}", f"--app-dir={tmp_path / 'app'}", f"--out-dir={tmp_path / 'out'}"])
     stage.main()
 
     # Verify golden was accepted (printed "golden ok")
@@ -120,7 +120,7 @@ def test_stage_tampered_golden_exits_2(tmp_path, monkeypatch):
     # Run stage.py - should exit 2
     from tools.nn import stage
 
-    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}"])
+    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}", f"--app-dir={tmp_path / 'app'}", f"--out-dir={tmp_path / 'out'}"])
     with pytest.raises(SystemExit) as exc_info:
         stage.main()
     assert exc_info.value.code == 2
@@ -146,7 +146,7 @@ def test_stage_dry_run_copies_nothing(tmp_path, monkeypatch):
     # Run stage.py with --dry-run
     from tools.nn import stage
 
-    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}", "--dry-run"])
+    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}", "--dry-run", f"--app-dir={tmp_path / 'app'}", f"--out-dir={tmp_path / 'out'}"])
     stage.main()
 
     # Verify no files were copied
@@ -165,7 +165,7 @@ def test_stage_vocab_mismatch_exits_3(tmp_path, monkeypatch):
     # Run stage.py - should exit 3
     from tools.nn import stage
 
-    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}"])
+    monkeypatch.setattr("sys.argv", ["stage.py", str(run_dir), f"--words={words_file}", f"--app-dir={tmp_path / 'app'}", f"--out-dir={tmp_path / 'out'}"])
     with pytest.raises(SystemExit) as exc_info:
         stage.main()
     assert exc_info.value.code == 3
