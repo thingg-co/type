@@ -64,11 +64,14 @@ object Confusables {
 
     /**
      * Directed per-pair lookback overrides, measured like the globals (Tatoeba
-     * 2026-09-01 run, 500 cases per set per label):
+     * 2026-09-01 run, 500 cases per set per label; dialogue re-check 2026-09-06 on the
+     * mixed-corpus network, 21,000 OpenSubtitles cases):
      *
-     * its -> it's at 3.0: FP 0/83 with 79% catch on the 126k network (the global 5.0
-     * catches only 50%). The prior is real — typed "its" is usually a meant "it's" —
-     * and the lookback pass is where the sentence decides it.
+     * its -> it's had its own bar at 3.0 for the 126k network (FP 0/83, 79% catch;
+     * the global caught only 50%). The mixed-corpus network is sharper on this pair
+     * and the low bar started flipping possessives ("the phone its battery" at 3.3),
+     * so the pair is back on the global: at 5.0 it measures FP 0/24 and 86% catch
+     * on dialogue, against 1/24 at 3.0 and at 4.0.
      *
      * id -> i'd at 6.0: bare "id" is legitimately ID in chat and the prose corpus
      * barely samples it, so the bar stays above the global; the new network cliffs
@@ -76,7 +79,6 @@ object Confusables {
      * acronym's casing itself waits for cased vocab ids.
      */
     private val LOOKBACK_OVERRIDES = mapOf(
-        ("its" to "it's") to 3.0f,
         ("id" to "i'd") to 6.0f,
     )
 

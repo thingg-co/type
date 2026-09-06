@@ -35,8 +35,9 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   `NeuralLm` (assets/en_nextword.bin, trained/exported by tools/nn/train.py, golden-vector
   tested) predicts and ranks by a K-word window (K in the asset header, currently 8) through a
   dense trunk of one or more layers (TNW3 layout: header V, K, E, L; per layer out, in, W, b;
-  TNW1/TNW2 one-layer assets still load). Two layers of 512 beat one on held-out text; three do
-  not. Train on the Spark (CUDA, ~17 min per 60k steps) rather than the Mac (MPS corrupts the
+  TNW1/TNW2 one-layer assets still load). The shipped net is two layers of 1024 trained on the
+  mixed corpus (0.7.3); two layers beat one, three do not, and width past 1024 buys nothing at
+  this data size. Train on the Spark (CUDA, ~17 min per 60k steps) rather than the Mac (MPS corrupts the
   126k-wide top-k in eval). The format lives in tools/nn/tnw.py (export, reader, and the exact
   quantized forward the app mirrors; TNW4 adds an untied output table, which trained worse under
   the sampled softmax and is not used). A sweep is a json of runs for tools/nn/sweep.py, which

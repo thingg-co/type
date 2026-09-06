@@ -13,12 +13,13 @@ Site: https://thingg-co.github.io/type/
   answer is close enough to what you typed (edit distance and dictionary checks), the word is
   replaced. An undo chip appears in the suggestion bar; backspace straight after a correction
   restores the original too.
-- While you type, the bar is context-aware: a lexer reads the previous tokens and a 29 MB
-  on-device neural network (eight-word window, two 512-wide layers, 192-d, int8, trained on 54M
-  words by tools/nn/)
+- While you type, the bar is context-aware: a lexer reads the previous tokens and a 32 MB
+  on-device neural network (eight-word window, two 1024-wide layers, 192-d, int8, trained on 93M
+  words by tools/nn/, a third of them film and TV dialogue)
   suggests the next word after each space and ranks completions ("should ha" puts "have"
-  first). On held-out text it hits top-3 next-word 37.4% vs 19.7% for the bigram table it
-  replaced; the bigram table stays as an instant fallback. If what you typed cannot start
+  first). On held-out news and encyclopedic text it hits top-3 next-word 37.5% vs 19.7% for the
+  bigram table it replaced, and on held-out dialogue 32.7% vs 16.8%; the bigram table stays as
+  an instant fallback. If what you typed cannot start
   any dictionary word, dictionary candidates appear immediately and the correction model is
   asked after a short pause.
 - Bare contractions get their apostrophes at the word boundary ("dont" becomes "don't",
