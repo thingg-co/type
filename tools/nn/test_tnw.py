@@ -369,3 +369,153 @@ def test_predict_logits_batch_single_row(tmp_path):
 
     assert actual.shape == (1, 50)
     np.testing.assert_array_almost_equal(actual[0], expected)
+
+
+class TinyNextWordUntied(nn.Module):
+    """Tiny NextWord model with untied output embeddings for testing."""
+
+    def __init__(self, V=50, E=8, layers=2, hidden=16, K=3):
+        super().__init__()
+        self.emb = nn.Embedding(V, E)
+        self.out = nn.Embedding(V, E)  # Untied output embeddings
+        dims = [K * E] + [hidden] * (layers - 1) + [E]
+        mods = []
+        for i in range(len(dims) - 1):
+            mods += [nn.Linear(dims[i], dims[i + 1]), nn.ReLU()]
+        self.trunk = nn.Sequential(*mods)
+        self.bout = nn.Parameter(torch.zeros(V))
+        nn.init.normal_(self.emb.weight, std=0.02)
+        nn.init.normal_(self.out.weight, std=0.02)
+
+    def forward(self, ctx):
+        e = self.emb(ctx).flatten(1)
+        h = self.trunk(e)
+        return h @ self.out.weight.T + self.bout
+
+
+def build_tiny_untied_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0):
+    """Build and return a TinyNextWordUntied model with given seed."""
+    torch.manual_seed(seed)
+    model = TinyNextWordUntied(V=V, E=E, layers=layers, hidden=hidden, K=K)
+    return model
+
+
+def test_untied_exports_tnw4(tmp_path):
+    """An untied model exports as TNW4 and has q_out different from q."""
+    model = build_tiny_untied_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+    out_path = tmp_path / "test_untied.bin"
+
+    # Export using export_tnw (should auto-detect and use TNW4)
+    meta = tnw.export_tnw(model, str(out_path), K=3)
+
+    # Verify it's TNW4
+    assert meta["bytes"] > 0
+
+    # Read back and verify q_out is different from q
+    net = tnw.read_tnw(str(out_path))
+
+    # Check magic is TNW4
+    assert net["magic"] == b"TNW4"
+
+    # q and q_out should be different arrays (different weights)
+    assert net["q"].shape == (50, 8)
+    assert net["q_out"].shape == (50, 8)
+    # They should not be identical (different initializations)
+    # Note: with different seeds, they definitely differ; using same seed but
+    # different nn.Embedding instances means different values
+    assert not np.array_equal(net["q"], net["q_out"])
+
+
+def test_untied_predict_logits_matches_torch(tmp_path):
+    """Verify predict_logits on untied model matches torch model."""
+    torch.manual_seed(0)
+    model = build_tiny_untied_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+
+    # Export
+    out_path = tmp_path / "test_untied_logits.bin"
+    tnw.export_tnw(model, str(out_path), K=3)
+
+    # Read back
+    net = tnw.read_tnw(str(out_path))
+
+    # Test on 10 random contexts
+    torch.manual_seed(123)
+    matches = 0
+
+    for _ in range(10):
+        ctx = torch.randint(0, 50, (3,)).tolist()
+
+        # Torch forward pass
+        with torch.no_grad():
+            ctx_t = torch.tensor([ctx])
+            torch_logits = model(ctx_t).squeeze(0).numpy()
+
+        # TNW predict_logits
+        tnw_logits = tnw.predict_logits(net, ctx)
+
+        # Check argmax match
+        torch_top1 = int(np.argmax(torch_logits))
+        tnw_top1 = int(np.argmax(tnw_logits))
+        if torch_top1 == tnw_top1:
+            matches += 1
+
+    # Assert at least 8 of 10 argmax matches
+    assert matches >= 8, f"Only {matches}/10 argmax matches"
+
+
+def test_tied_tnw3_compatibility(tmp_path):
+    """A tied model exports identically via export_tnw3 and export_tnw."""
+    model = build_tiny_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+
+    out_path1 = tmp_path / "test_tnw3.bin"
+    out_path2 = tmp_path / "test_tnw.bin"
+
+    # Export with both methods
+    meta1 = tnw.export_tnw3(model, str(out_path1), K=3)
+    meta2 = tnw.export_tnw(model, str(out_path2), K=3)
+
+    # Files should be identical
+    with open(out_path1, "rb") as f1, open(out_path2, "rb") as f2:
+        assert f1.read() == f2.read()
+
+
+def test_read_tnw3_returns_q_out_equals_q(tmp_path):
+    """read_tnw on a TNW3 file returns q_out is q (same object) and scale_out equals scale."""
+    model = build_tiny_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+
+    out_path = tmp_path / "test_tied.bin"
+    tnw.export_tnw3(model, str(out_path), K=3)
+
+    net = tnw.read_tnw(str(out_path))
+
+    # For tied models, q_out should be the same object as q
+    assert net["q_out"] is net["q"]
+    assert net["scale_out"] is net["scale"]
+
+
+def test_untied_predict_logits_batch_equals_rowwise(tmp_path):
+    """Test predict_logits_batch on an untied net equals per-row predict_logits."""
+    torch.manual_seed(0)
+    model = build_tiny_untied_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+
+    out_path = tmp_path / "test_untied_batch.bin"
+    tnw.export_tnw(model, str(out_path), K=3)
+    net = tnw.read_tnw(str(out_path))
+
+    # Generate 16 random contexts
+    torch.manual_seed(123)
+    ctxs = [torch.randint(0, 50, (3,)).tolist() for _ in range(16)]
+    ctx_batch = np.array(ctxs, dtype=np.int64)
+
+    # Per-row loop
+    expected = np.stack([tnw.predict_logits(net, c) for c in ctxs])
+
+    # Batched version
+    actual = tnw.predict_logits_batch(net, ctx_batch)
+
+    # Check allclose
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-4)
+
+    # Check argmax per row
+    for i in range(16):
+        assert np.argmax(actual[i]) == np.argmax(expected[i]), f"Row {i} argmax mismatch"
