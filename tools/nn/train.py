@@ -70,9 +70,10 @@ def windows(stream, V):
 
 
 class NextWord(nn.Module):
-    def __init__(self, V, E, layers=1, hidden=256, dropout=0.0):
+    def __init__(self, V, E, layers=1, hidden=256, dropout=0.0, untied=False):
         super().__init__()
         self.emb = nn.Embedding(V, E)
+        self.out = nn.Embedding(V, E) if untied else None
         dims = [K * E] + [hidden] * (layers - 1) + [E]
         mods = []
         for i in range(len(dims) - 1):
@@ -80,11 +81,15 @@ class NextWord(nn.Module):
         self.trunk = nn.Sequential(*mods)
         self.bout = nn.Parameter(torch.zeros(V))
         nn.init.normal_(self.emb.weight, std=0.02)
+        if self.out is not None:
+            nn.init.normal_(self.out.weight, std=0.02)
 
     def forward(self, ctx):
         e = self.emb(ctx).flatten(1)
         h = self.trunk(e)
-        return h @ self.emb.weight.T + self.bout
+        # Use output embedding table if untied, otherwise tied embeddings
+        out_emb = self.out.weight if self.out is not None else self.emb.weight
+        return h @ out_emb.T + self.bout
 
 
 def main():
@@ -99,13 +104,17 @@ def main():
     hidden = int(args[args.index("--hidden") + 1]) if "--hidden" in args else 256
     negs = int(args[args.index("--negs") + 1]) if "--negs" in args else 8192
     full = "--full-softmax" in args
+    untied = "--untied" in args
     wd = float(args[args.index("--wd") + 1]) if "--wd" in args else 0.01
     dropout = float(args[args.index("--dropout") + 1]) if "--dropout" in args else 0.0
 
     n_words = sum(1 for _ in open("app/src/main/assets/en_words.txt", encoding="utf-8"))
     V = n_words + 2  # BOS, UNK
     dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"V={V} E={E} K={K} steps={steps} device={dev}")
+    print(f"V={V} E={E} K={K} steps={steps} device={dev}", end="")
+    if untied:
+        print(" untied output table", end="")
+    print()
 
     cache = f"{data_dir}/win_k{K}.npz"
     try:
@@ -118,7 +127,7 @@ def main():
         np.savez(cache, tc=tr_ctx, tt=tr_tgt, vc=va_ctx, vt=va_tgt)
     print(f"train windows {len(tr_tgt)}, val {len(va_tgt)}")
 
-    model = NextWord(V, E, layers, hidden, dropout).to(dev)
+    model = NextWord(V, E, layers, hidden, dropout, untied).to(dev)
     print(f"layers={layers} hidden={hidden} params={sum(p.numel() for p in model.parameters())}")
     opt = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=wd)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps, eta_min=3e-4)
@@ -149,7 +158,9 @@ def main():
         # hard, frequent negatives a uniform draw almost never picks.
         neg = (torch.rand(negs, device=dev) * math.log(float(V))).exp().long().clamp(1, V - 1) - 1
         cand = torch.cat([tgt, neg])
-        logits = h @ model.emb.weight[cand].T + model.bout[cand]
+        # Use output embedding table if untied, otherwise tied embeddings
+        out_emb = model.out.weight if model.out is not None else model.emb.weight
+        logits = h @ out_emb[cand].T + model.bout[cand]
         # logQ correction for the biased sampler (log-uniform: q ~ 1/((id+1) ln V)).
         logq = -torch.log((cand + 1).float()) - math.log(math.log(float(V)))
         logits = logits - logq.unsqueeze(0)
@@ -187,11 +198,12 @@ def main():
 
     # ---- export ----------------------------------------------------------------------
     out = f"{out_dir}/en_nextword.bin"
-    # Use export_tnw3 to write the file; returns metadata dict
-    tnw.export_tnw3(model, out, K)
+    # Use export_tnw to write the file; returns metadata dict
+    # Writes TNW3 for tied models, TNW4 for untied models
+    tnw.export_tnw(model, out, K)
 
     # golden vector for the Kotlin test: context ids + expected top ids/logits (quantized path)
-    # Reconstruct the quantized state from what export_tnw3 just wrote
+    # Reconstruct the quantized state from what export_tnw just wrote
     net = tnw.read_tnw(out)
     ctx = va_ctx[0].tolist()
     h = (net["q"][ctx].astype(np.float32) * net["scale"][ctx, None]).flatten()
@@ -199,7 +211,10 @@ def main():
         h = np.maximum(w @ h + b, 0)
     hs = max(np.abs(h).max() / 127.0, 1e-8)
     hq = np.clip(np.round(h / hs), -127, 127).astype(np.int32)
-    logits = (net["q"] @ hq) * net["scale"] * hs + net["bout"]
+    # Use output embedding table for vocab product; fall back to q/scale for tied models
+    q_out = net.get("q_out", net["q"])
+    scale_out = net.get("scale_out", net["scale"])
+    logits = (q_out @ hq) * scale_out * hs + net["bout"]
     top = np.argsort(-logits)[:5]
     json.dump(
         {"context": ctx, "top_ids": top.tolist(), "top_logits": logits[top].tolist()},
