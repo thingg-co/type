@@ -180,3 +180,73 @@ def predict_logits(net, ctx_ids):
     logits = (q @ hq) * scale * hs + bout
 
     return logits
+
+
+def predict_logits_batch(net, ctx_batch):
+    """Compute logits for multiple contexts using the quantized TNW network.
+
+    Batched version that computes trunk outputs for all contexts, then quantizes
+    and computes logits via integer matmul.
+
+    Forward pass:
+      1. Dequantize embeddings for all contexts
+      2. Pass through trunk with ReLU (vectorized)
+      3. Quantize trunk output to int8 per row (hs = absmax/127)
+      4. logits[v] = scale[v] * hs * dot_int8(q[v], qh[row]) + bout[v]
+
+    Args:
+        net: dict from read_tnw()
+        ctx_batch: int array of shape (N, K) where N is batch size, K is context length
+
+    Returns:
+        np.ndarray of logits shape (N, V)
+    """
+    q = net["q"]
+    scale = net["scale"]
+    bout = net["bout"]
+    layers = net["layers"]
+    K = net["K"]
+    V = q.shape[0]
+    BOS = V - 2  # BOS is second-to-last id
+
+    N = ctx_batch.shape[0]
+
+    # Left-pad contexts with BOS (N, K) -> (N, K) after padding and trimming
+    # For each context, prepend K BOS ids and take last K
+    bos_ctx = np.full((N, K), BOS, dtype=np.int64)
+    ctx_ids = np.asarray(ctx_batch, dtype=np.int64)
+    # Concatenate K BOS at start, then take last K
+    padded = np.concatenate([bos_ctx, ctx_ids], axis=1)
+    ctx = padded[:, -K:]
+
+    # Dequantize embeddings for all contexts: (N, K, E) * (N, K, 1)
+    q_ctx = q[ctx].astype(np.float32)  # (N, K, E)
+    scale_ctx = scale[ctx][:, :, None]  # (N, K, 1)
+    h = (q_ctx * scale_ctx).reshape(N, -1)  # (N, K*E) flattened
+
+    # Trunk forward with ReLU (vectorized across batch)
+    for w, b in layers:
+        h = np.maximum(h @ w.T + b, 0)  # (N, out)
+
+    # Quantize trunk output to int8 per row
+    # hs[row] = max(abs(h[row]).max() / 127.0, 1e-8)
+    abs_max = np.abs(h).max(axis=1, keepdims=True)  # (N, 1)
+    hs = np.maximum(abs_max / 127.0, 1e-8)  # (N, 1)
+
+    # hq[row] = clip(round(h[row] / hs[row]), -127, 127)
+    hq = np.clip(np.round(h / hs), -127, 127).astype(np.int32)  # (N, E)
+
+    # Compute logits for all rows at once:
+    # logits[v] = scale[v] * hs * dot(q[v], hq[row]) + bout[v]
+    # For batch: logits[row, v] = scale[v] * hs[row] * dot(q[v], hq[row]) + bout[v]
+    # q is (V, E), hq is (N, E)
+    # q @ hq.T = (V, N) where column row is dot(q[:, :], hq[row, :])
+    # float32 BLAS instead of numpy's scalar int32 loops: every dot product is a sum of at most
+    # E terms of |a*b| <= 127*127, far below 2^24, so the float32 result is the exact integer.
+    qf = net.get("_qf")
+    if qf is None:
+        qf = net["_qf"] = q.astype(np.float32)
+    dot_val = qf @ hq.astype(np.float32).T  # (V, N), exact
+    logits = (dot_val * scale[:, None] * hs.T + bout[:, None]).T  # (N, V)
+
+    return logits

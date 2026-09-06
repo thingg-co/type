@@ -55,15 +55,6 @@ bout = net["bout"]
 layers = net["layers"]
 KK = net["K"]
 
-def nn_logits(ctx):
-    ctx = ([BOS] * KK + ctx)[-KK:]
-    h = (q[ctx].astype(np.float32) * scale[ctx, None]).flatten()
-    for w, b in layers:
-        h = np.maximum(w @ h + b, 0)
-    hs = max(np.abs(h).max() / 127.0, 1e-8)
-    hq = np.clip(np.round(h / hs), -127, 127).astype(np.int32)
-    return (q @ hq) * scale * hs + bout
-
 # trie candidates for prefix reranking: words by 2-letter prefix, top by unigram rank
 from collections import defaultdict
 by_prefix = defaultdict(list)
@@ -75,20 +66,21 @@ for k2 in by_prefix:
 
 stream = np.fromfile(val_path, dtype="<u4").astype(np.int64)
 stats = dict(n=0, b1=0, b3=0, n1=0, n3=0, pn=0, pb1=0, pn1=0)
-sent = []
-for t in stream:
-    if t == SEP:
-        sent = []
-        continue
-    t = int(t)
-    if sent and t < NW:
-        stats["n"] += 1
+CHUNK = 2048
+
+
+def score(cases):
+    """Score a chunk of (context, target) cases: the network runs batched, the rest per case."""
+    if not cases:
+        return
+    ctx = np.array([([BOS] * KK + c)[-KK:] for c, _ in cases], dtype=np.int64)
+    logits = tnw.predict_logits_batch(net, ctx)
+    logits[:, BOS] = logits[:, UNK] = -1e30
+    for (sent, t), lg in zip(cases, logits):
         prev = sent[-1]
         bt = bigram_top3(prev) if prev < NW else []
         stats["b1"] += bt[:1] == [t]
         stats["b3"] += t in bt
-        lg = nn_logits(sent)
-        lg[BOS] = lg[UNK] = -1e30
         top = np.argpartition(-lg, 3)[:3]
         top = top[np.argsort(-lg[top])]
         stats["n1"] += int(top[0]) == t
@@ -104,10 +96,25 @@ for t in stream:
                 stats["pb1"] += cands[0] == t
             ns = lg[cands]
             stats["pn1"] += cands[int(np.argmax(ns))] == t
+
+
+sent = []
+pending = []
+for t in stream:
+    if t == SEP:
+        sent = []
+        continue
+    t = int(t)
+    if sent and t < NW:
+        stats["n"] += 1
+        pending.append((list(sent), t))
+        if len(pending) >= CHUNK:
+            score(pending)
+            pending = []
         if stats["n"] >= limit:
             break
     sent.append(t)
-
+score(pending)
 n, pn = stats["n"], max(stats["pn"], 1)
 print(f"next-word ({n} cases):  bigram top1 {stats['b1']/n:.3f} top3 {stats['b3']/n:.3f}   "
       f"network top1 {stats['n1']/n:.3f} top3 {stats['n3']/n:.3f}")

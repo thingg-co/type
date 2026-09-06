@@ -320,3 +320,52 @@ def test_predict_logits_api_consistency(tmp_path):
     assert logits_list.shape == (50,)
     assert logits_array.shape == (50,)
     np.testing.assert_array_almost_equal(logits_list, logits_array)
+
+
+def test_predict_logits_batch_random_contexts(tmp_path):
+    """Test predict_logits_batch on 16 random contexts equals per-row loop."""
+    torch.manual_seed(0)
+    model = build_tiny_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+
+    out_path = tmp_path / "test_batch.bin"
+    tnw.export_tnw3(model, str(out_path), K=3)
+    net = tnw.read_tnw(str(out_path))
+
+    # Generate 16 random contexts
+    torch.manual_seed(123)
+    ctxs = [torch.randint(0, 50, (3,)).tolist() for _ in range(16)]
+    ctx_batch = np.array(ctxs, dtype=np.int64)
+
+    # Per-row loop
+    expected = np.stack([tnw.predict_logits(net, c) for c in ctxs])
+
+    # Batched version
+    actual = tnw.predict_logits_batch(net, ctx_batch)
+
+    # Check allclose
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-4)
+
+    # Check argmax per row
+    for i in range(16):
+        assert np.argmax(actual[i]) == np.argmax(expected[i]), f"Row {i} argmax mismatch"
+
+
+def test_predict_logits_batch_single_row(tmp_path):
+    """Test predict_logits_batch with batch size 1 equals predict_logits."""
+    torch.manual_seed(0)
+    model = build_tiny_model(V=50, E=8, layers=2, hidden=16, K=3, seed=0)
+
+    out_path = tmp_path / "test_batch1.bin"
+    tnw.export_tnw3(model, str(out_path), K=3)
+    net = tnw.read_tnw(str(out_path))
+
+    ctx = [1, 2, 3]
+
+    # Single context via predict_logits
+    expected = tnw.predict_logits(net, ctx)
+
+    # Single context via predict_logits_batch
+    actual = tnw.predict_logits_batch(net, np.array([ctx], dtype=np.int64))
+
+    assert actual.shape == (1, 50)
+    np.testing.assert_array_almost_equal(actual[0], expected)
