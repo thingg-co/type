@@ -519,3 +519,243 @@ def test_untied_predict_logits_batch_equals_rowwise(tmp_path):
     # Check argmax per row
     for i in range(16):
         assert np.argmax(actual[i]) == np.argmax(expected[i]), f"Row {i} argmax mismatch"
+
+
+def _build_tnw5(V, E, H, L, seed=0, path=None):
+    """Build a TNW5 format file by hand using struct.
+
+    TNW5 layout (big-endian):
+      magic "TNW5"; ">iiii" V, E, H, L
+      input table: V*E int8 rows (per-row scale = absmax/127), then V float32 scales
+      per GRU layer l = 0..L-1, PyTorch gate order (r, z, n):
+        W_ih (3H x in) float32 row-major, W_hh (3H x H), b_ih (3H), b_hh (3H)
+      proj: W (E x H) float32 row-major, b (E)
+      bout: V float32
+    """
+    import torch
+    import tempfile
+    torch.manual_seed(seed)
+
+    if path is None:
+        path = tempfile.mktemp(suffix=".bin")
+    out_path = path
+
+    with open(out_path, "wb") as f:
+        f.write(b"TNW5")
+        f.write(struct.pack(">iiii", V, E, H, L))
+
+        # Input embedding table
+        torch.manual_seed(seed + 1)
+        emb = torch.randn(V, E).numpy().astype(np.float32)
+        scale = np.maximum(np.abs(emb).max(axis=1) / 127.0, 1e-8).astype(np.float32)
+        q = np.clip(np.round(emb / scale[:, None]), -127, 127).astype(np.int8)
+        f.write(q.tobytes())
+        f.write(scale.astype(">f4").tobytes())
+
+        # GRU layers
+        torch.manual_seed(seed + 2)
+        in_size = E
+        for l in range(L):
+            # W_ih: 3H x in
+            W_ih = torch.randn(3 * H, in_size).numpy().astype(np.float32)
+            # W_hh: 3H x H
+            W_hh = torch.randn(3 * H, H).numpy().astype(np.float32)
+            # b_ih: 3H
+            b_ih = torch.randn(3 * H).numpy().astype(np.float32)
+            # b_hh: 3H
+            b_hh = torch.randn(3 * H).numpy().astype(np.float32)
+
+            f.write(W_ih.astype(">f4").tobytes())
+            f.write(W_hh.astype(">f4").tobytes())
+            f.write(b_ih.astype(">f4").tobytes())
+            f.write(b_hh.astype(">f4").tobytes())
+
+            in_size = H
+
+        # Projection: E x H
+        torch.manual_seed(seed + 3)
+        proj_w = torch.randn(E, H).numpy().astype(np.float32)
+        proj_b = torch.randn(E).numpy().astype(np.float32)
+        f.write(proj_w.astype(">f4").tobytes())
+        f.write(proj_b.astype(">f4").tobytes())
+
+        # bout: V
+        bout = torch.zeros(V).numpy().astype(np.float32)
+        f.write(bout.astype(">f4").tobytes())
+
+    return out_path, emb, scale, q, W_ih, W_hh, b_ih, b_hh, proj_w, proj_b
+
+
+def test_read_tnw5_header_and_shapes(tmp_path):
+    """Read a hand-built TNW5 file and verify header and GRU layer shapes."""
+    V, E, H, L = 50, 8, 6, 2
+    out_path, _, _, _, _, _, _, _, _, _ = _build_tnw5(V, E, H, L, seed=0)
+
+    net = tnw.read_tnw(str(out_path))
+
+    # Verify magic and kind
+    assert net["magic"] == b"TNW5"
+    assert net["kind"] == "gru"
+
+    # Verify header fields
+    assert net["V"] == V
+    assert net["K"] is None  # GRU doesn't use K
+    assert net["E"] == E
+    assert net["H"] == H
+    assert net["L"] == L
+
+    # Verify input embedding table
+    assert net["q"].shape == (V, E)
+    assert net["q"].dtype == np.int32
+    assert net["scale"].shape == (V,)
+    assert net["scale"].dtype == np.float32
+
+    # Verify GRU layers
+    assert len(net["gru"]) == L
+    # Layer 0: in_size = E = 8, out = H = 6
+    assert net["gru"][0]["w_ih"].shape == (3 * H, E)  # (18, 8)
+    assert net["gru"][0]["w_hh"].shape == (3 * H, H)  # (18, 6)
+    assert net["gru"][0]["b_ih"].shape == (3 * H,)    # (18,)
+    assert net["gru"][0]["b_hh"].shape == (3 * H,)    # (18,)
+    # Layer 1: in_size = H = 6, out = H = 6
+    assert net["gru"][1]["w_ih"].shape == (3 * H, H)  # (18, 6)
+    assert net["gru"][1]["w_hh"].shape == (3 * H, H)  # (18, 6)
+    assert net["gru"][1]["b_ih"].shape == (3 * H,)    # (18,)
+    assert net["gru"][1]["b_hh"].shape == (3 * H,)    # (18,)
+
+    # Verify projection
+    assert net["proj_w"].shape == (E, H)  # (8, 6)
+    assert net["proj_b"].shape == (E,)    # (8,)
+
+    # Verify bout
+    assert net["bout"].shape == (V,)
+    assert net["bout"].dtype == np.float32
+
+
+def test_predict_logits_gru_matches_torch(tmp_path):
+    """Verify predict_logits on GRU net matches torch.nn.GRU within tolerance."""
+    V, E, H, L = 50, 8, 6, 2
+    out_path, emb, scale, q, W_ih, W_hh, b_ih, b_hh, proj_w, proj_b = _build_tnw5(V, E, H, L, seed=0)
+
+    net = tnw.read_tnw(str(out_path))
+
+    # Build equivalent torch GRU
+    torch.manual_seed(0)
+    gru = torch.nn.GRU(E, H, L, batch_first=True)
+
+    # Copy weights (PyTorch uses layer-specific parameter names weight_ih_l{l}, weight_hh_l{l})
+    with torch.no_grad():
+        for l in range(L):
+            w_ih = torch.tensor(net["gru"][l]["w_ih"], dtype=torch.float32)
+            w_hh = torch.tensor(net["gru"][l]["w_hh"], dtype=torch.float32)
+            b_ih = torch.tensor(net["gru"][l]["b_ih"], dtype=torch.float32)
+            b_hh = torch.tensor(net["gru"][l]["b_hh"], dtype=torch.float32)
+
+            setattr(gru, f"weight_ih_l{l}", torch.nn.Parameter(w_ih))
+            setattr(gru, f"weight_hh_l{l}", torch.nn.Parameter(w_hh))
+            setattr(gru, f"bias_ih_l{l}", torch.nn.Parameter(b_ih))
+            setattr(gru, f"bias_hh_l{l}", torch.nn.Parameter(b_hh))
+
+    # Project layer
+    proj = torch.nn.Linear(H, E, bias=True)
+    with torch.no_grad():
+        proj.weight.data.copy_(torch.tensor(proj_w, dtype=torch.float32))
+        proj.bias.data.copy_(torch.tensor(proj_b, dtype=torch.float32))
+
+    # Test on multiple contexts
+    torch.manual_seed(123)
+    matches = 0
+    tol_ok = 0
+
+    for _ in range(10):
+        ctx = torch.randint(0, V - 2, (3,)).tolist()
+
+        # Torch forward pass
+        with torch.no_grad():
+            x_ids = torch.tensor([V - 2] + ctx, dtype=torch.long)
+            emb_layer = torch.nn.Embedding(V, E)
+            emb_layer.weight.data.copy_(torch.tensor(emb, dtype=torch.float32))
+            x = emb_layer(x_ids).unsqueeze(0)
+            h_t, _ = gru(x)
+            h_last = h_t[:, -1, :]
+            v = proj(h_last).squeeze(0)
+
+        # TNW predict_logits
+        tnw_logits = tnw.predict_logits(net, ctx)
+
+        # Torch logits: v @ emb.T + bout
+        torch_logits = v @ torch.tensor(emb, dtype=torch.float32).T
+
+        # Check argmax match
+        torch_top1 = int(np.argmax(torch_logits.numpy()))
+        tnw_top1 = int(np.argmax(tnw_logits))
+        if torch_top1 == tnw_top1:
+            matches += 1
+
+        # Check logits allclose
+        # GRU with quantized int8 embeddings has ~0.1-0.4 quantization error in logits
+        tnw_logits_f32 = torch.tensor(tnw_logits, dtype=torch.float32)
+        if torch.allclose(torch_logits, tnw_logits_f32, atol=0.5):
+            tol_ok += 1
+
+    assert matches >= 8, f"Only {matches}/10 argmax matches"
+    assert tol_ok >= 8, f"Only {tol_ok}/10 logits allclose"
+
+
+def test_predict_logits_batch_gru_equals_rowwise(tmp_path):
+    """Test predict_logits_batch on GRU net equals per-row predict_logits."""
+    V, E, H, L = 50, 8, 6, 2
+    out_path, _, _, _, _, _, _, _, _, _ = _build_tnw5(V, E, H, L, seed=0)
+
+    net = tnw.read_tnw(str(out_path))
+
+    # Generate 12 contexts of mixed lengths (0 to 5 ids)
+    torch.manual_seed(123)
+    ctxs = [torch.randint(0, V - 2, (np.random.randint(0, 6),)).tolist() for _ in range(12)]
+
+    # Per-row loop
+    expected = np.stack([tnw.predict_logits(net, c) for c in ctxs])
+
+    # Batched version
+    max_len = max(len(c) for c in ctxs)
+    ctx_batch = np.zeros((12, max_len), dtype=np.int64)
+    ctx_lengths = []
+    for i, c in enumerate(ctxs):
+        if len(c) > 0:
+            ctx_batch[i, :len(c)] = c
+        ctx_lengths.append(len(c))
+
+    actual = tnw.predict_logits_batch(net, ctx_batch, ctx_lengths)
+
+    # Check allclose
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-4)
+
+    # Check argmax per row
+    for i in range(12):
+        assert np.argmax(actual[i]) == np.argmax(expected[i]), f"Row {i} argmax mismatch"
+
+
+def test_tnw5_file_size_formula(tmp_path):
+    """Verify TNW5 file size formula.
+
+    Size = 4 + 16 + V*E + 4*V +
+           sum over layers of (4*(3H*in + 3H*H + 6H)) +
+           4*(E*H + E) + 4*V
+    """
+    V, E, H, L = 50, 8, 6, 2
+    out_path, _, _, _, _, _, _, _, _, _ = _build_tnw5(V, E, H, L, seed=0)
+
+    expected = 4 + 16
+    expected += V * E
+    expected += 4 * V
+
+    in_size = E
+    for l in range(L):
+        expected += 4 * (3 * H * in_size + 3 * H * H + 6 * H)
+        in_size = H
+
+    expected += 4 * (E * H + E)
+    expected += 4 * V
+
+    actual = os.path.getsize(out_path)
+    assert actual == expected, f"Expected {expected}, got {actual}"
