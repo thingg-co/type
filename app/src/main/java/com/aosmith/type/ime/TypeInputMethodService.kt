@@ -1099,26 +1099,34 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         if (segment.isBlank()) return
         cancelLive()
         sentenceJob?.cancel()
-        strip?.showStatus("…")
+        // The model takes a moment, up to a few seconds on a slow phone: say so on the strip
+        // and on the key itself, and take both back on every way out, cancellation included.
+        strip?.showBusy("Fixing…")
+        keyboardView?.busyAction = KeyAction.FixSentence
         sentenceJob = mainScope.launch {
-            val corrected = llm.correctSentence(segment)
-            val ic2 = currentInputConnection ?: return@launch
-            if (corrected == null) {
-                strip?.showStatus("Looks fine")
-                delay(1200)
-                strip?.clear()
-                return@launch
+            try {
+                val corrected = llm.correctSentence(segment)
+                val ic2 = currentInputConnection ?: return@launch
+                if (corrected == null) {
+                    strip?.showStatus("Looks fine")
+                    delay(1200)
+                    strip?.clear()
+                    return@launch
+                }
+                val now = ic2.getTextBeforeCursor(400, 0)?.toString() ?: return@launch
+                if (!now.endsWith(span)) return@launch
+                ic2.beginBatchEdit()
+                ic2.deleteSurroundingText(span.length, 0)
+                ic2.commitText(corrected + trailing, 1)
+                ic2.endBatchEdit()
+                pendingUndo = Undo(segment, corrected, trailing)
+                undoArmed = false
+                strip?.showUndo("undo")
+                syncWordFromEditor()
+            } finally {
+                keyboardView?.busyAction = null
+                strip?.endBusy()
             }
-            val now = ic2.getTextBeforeCursor(400, 0)?.toString() ?: return@launch
-            if (!now.endsWith(span)) return@launch
-            ic2.beginBatchEdit()
-            ic2.deleteSurroundingText(span.length, 0)
-            ic2.commitText(corrected + trailing, 1)
-            ic2.endBatchEdit()
-            pendingUndo = Undo(segment, corrected, trailing)
-            undoArmed = false
-            strip?.showUndo("undo")
-            syncWordFromEditor()
         }
     }
 

@@ -49,6 +49,15 @@ class SuggestionStripView @JvmOverloads constructor(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         visibility = View.GONE
     }
+    /** Spins beside [statusView] while the sentence pass runs; the model can take a few seconds. */
+    private val busyView: android.widget.ProgressBar =
+        android.widget.ProgressBar(context, null, android.R.attr.progressBarStyleSmall).apply {
+            isIndeterminate = true
+            val side = (22 * dp).toInt()
+            layoutParams = LayoutParams(side, side).apply { gravity = Gravity.CENTER_VERTICAL }
+            visibility = View.GONE
+        }
+    private var busyText: CharSequence? = null
 
     init {
         orientation = HORIZONTAL
@@ -56,6 +65,7 @@ class SuggestionStripView @JvmOverloads constructor(
         // Transparent overlay: unclaimed touches pass through to the keyboard below.
         setBackgroundColor(0)
         chips.forEach(::addView)
+        addView(busyView)
         addView(statusView)
     }
 
@@ -89,6 +99,7 @@ class SuggestionStripView @JvmOverloads constructor(
 
     fun showSuggestions(items: List<Suggestion>) {
         statusView.visibility = View.GONE
+        stopBusy()
         chips.forEachIndexed { i, chip ->
             val item = items.getOrNull(i)
             if (item == null) {
@@ -110,6 +121,7 @@ class SuggestionStripView @JvmOverloads constructor(
      */
     fun showWordKeys(words: List<String>) {
         statusView.visibility = View.GONE
+        stopBusy()
         chips.forEachIndexed { i, chip ->
             val word = words.getOrNull(i)
             if (word == null) {
@@ -127,6 +139,7 @@ class SuggestionStripView @JvmOverloads constructor(
 
     fun showUndo(original: String) {
         statusView.visibility = View.GONE
+        stopBusy()
         chips.forEachIndexed { i, chip ->
             if (i == 0) {
                 chip.visibility = View.VISIBLE
@@ -142,12 +155,45 @@ class SuggestionStripView @JvmOverloads constructor(
     }
 
     fun showStatus(text: String) {
+        stopBusy()
         chips.forEach { it.visibility = View.GONE }
         statusView.text = text
         statusView.visibility = View.VISIBLE
     }
 
+    /**
+     * Status with a spinner: something is running and the user should wait for it. The
+     * text gives up its full-width pill so the pair sits together in the middle.
+     */
+    fun showBusy(text: String) {
+        showStatus(text)
+        busyText = text
+        statusView.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)
+        gravity = Gravity.CENTER_HORIZONTAL
+        busyView.visibility = View.VISIBLE
+    }
+
+    /**
+     * Ends a [showBusy]: the spinner goes, and so does its text unless something else has
+     * replaced it since, so a pass that quits early never leaves "Fixing…" on screen.
+     */
+    fun endBusy() {
+        val stale = busyText != null && statusView.visibility == View.VISIBLE && statusView.text == busyText
+        stopBusy()
+        if (stale) statusView.visibility = View.GONE
+    }
+
+    private fun stopBusy() {
+        if (busyView.visibility == View.VISIBLE) {
+            statusView.layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
+            gravity = Gravity.NO_GRAVITY
+        }
+        busyView.visibility = View.GONE
+        busyText = null
+    }
+
     fun clear() {
+        stopBusy()
         statusView.visibility = View.GONE
         chips.forEach {
             it.visibility = View.GONE

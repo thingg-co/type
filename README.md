@@ -28,7 +28,8 @@ Site: https://thingg-co.github.io/type/
 - Suggestions and correction limits use keyboard-weighted edit distance: substituting an
   adjacent key barely counts, so the fat-finger explanation wins ("cst" suggests "cat",
   not "cut").
-- The ✨ button sends the current sentence to the model for a whole-sentence pass.
+- The ✨ button sends the current sentence to the model for a whole-sentence pass; while the
+  model works the key pulses and the bar shows a spinner, so a slow phone never looks stuck.
 - Optional on-device learning: what you type trains a small personal delta over the frozen
   prediction network (word ids only, app-private, never leaves the phone). A settings toggle
   controls it, a Forget button erases it, and fields that opt out of personalized learning

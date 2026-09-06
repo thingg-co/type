@@ -76,6 +76,30 @@ class KeyboardView @JvmOverloads constructor(
     var hapticsEnabled: Boolean = true
 
     /**
+     * The key whose action is running right now (the ✨ sentence pass): it pulses until
+     * cleared, so a tap that takes the model a few seconds is visibly in hand.
+     */
+    var busyAction: KeyAction? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            busyAnimator?.cancel()
+            busyAnimator = null
+            if (value != null) {
+                busyAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 550
+                    repeatCount = android.animation.ValueAnimator.INFINITE
+                    repeatMode = android.animation.ValueAnimator.REVERSE
+                    addUpdateListener { busyPhase = it.animatedValue as Float; invalidate() }
+                    start()
+                }
+            }
+            invalidate()
+        }
+    private var busyAnimator: android.animation.ValueAnimator? = null
+    private var busyPhase = 0f
+
+    /**
      * Word takeover: when set, the letter rows are replaced by these words as huge buttons,
      * with backspace, space, enter and an "abc" escape key keeping the flow available. The
      * view keeps its exact height so nothing on screen jumps.
@@ -240,7 +264,9 @@ class KeyboardView @JvmOverloads constructor(
 
             val isPressed = pressed.values.any { it === box }
             val shiftActive = spec.action == KeyAction.Shift && shift != Shift.OFF
+            val isBusy = busyAction != null && spec.action == busyAction
             keyPaint.color = when {
+                isBusy -> blend(colorKeySpecial, colorKeyAction, busyPhase)
                 isPressed -> colorKeyPressed
                 spec.accent -> colorKeyAction
                 shiftActive -> colorKeyPressed
@@ -291,6 +317,18 @@ class KeyboardView @JvmOverloads constructor(
                 }
             }
         }
+    }
+
+    /** Linear blend of two ARGB colours; [t] in 0..1 picks [b] fully at 1. */
+    private fun blend(a: Int, b: Int, t: Float): Int {
+        fun ch(shift: Int) = ((a shr shift and 0xFF) * (1 - t) + (b shr shift and 0xFF) * t).toInt() shl shift
+        return ch(24) or ch(16) or ch(8) or ch(0)
+    }
+
+    override fun onDetachedFromWindow() {
+        busyAnimator?.cancel()
+        busyAnimator = null
+        super.onDetachedFromWindow()
     }
 
     private fun labelFor(spec: KeySpec): String {
