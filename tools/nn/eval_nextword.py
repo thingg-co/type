@@ -8,11 +8,13 @@ does the model's reranking of the trie candidates put the right word first?
 usage: eval_nextword.py data_dir/val.bin [--limit N]
 """
 import struct
+import os
 import sys
 
 import numpy as np
 
-from tools.nn import tnw
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # run as a file or under pytest alike
+import tnw
 
 SEP = 0xFFFFFFFF
 K = 3

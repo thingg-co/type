@@ -22,10 +22,12 @@ usage: train.py data_dir out_dir [--steps N] [--dim E] [--batch B]
 import json
 import math
 import struct
+import os
 import sys
 import time
 
-from tools.nn import tnw
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # run as a file or under pytest alike
+import tnw
 
 import numpy as np
 import torch
