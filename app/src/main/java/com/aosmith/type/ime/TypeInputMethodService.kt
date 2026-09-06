@@ -655,7 +655,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         }
         liveJob = mainScope.launch {
             val beforeText = textBeforeWord(current) ?: ""
-            val prevWords = Lexer.previousWords(beforeText, 5)
+            val prevWords = Lexer.previousWords(beforeText, neural?.contextWords ?: 5)
             val action = withContext(Dispatchers.Default) { TypingPolicy.midWord(dict, bigrams, neural, prevWords, current) }
             if (com.aosmith.type.BuildConfig.DEBUG) {
                 Log.d(TAG, "midWord '$current' prev=$prevWords neural=${neural != null} -> ${action.javaClass.simpleName}")
@@ -812,7 +812,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
     ) {
         val n = neural ?: return
         val beforeText = textBeforeWord(finished, separator) ?: return
-        val ctx = Lexer.previousWords(beforeText, 5).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
+        val ctx = Lexer.previousWords(beforeText, n.contextWords).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
         val typedId = dict.idOf(finished)
         val altIds = alts.map(dict::idOf)
         if (typedId < 0 || altIds.any { it < 0 }) return
@@ -886,7 +886,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         val curId = dict.idOf(finished)
         val altIds = alts.map(dict::idOf)
         if (prevId < 0 || curId < 0 || altIds.any { it < 0 }) return false
-        val ctx2 = Lexer.previousWords(beforeText.substring(0, i), 5)
+        val ctx2 = Lexer.previousWords(beforeText.substring(0, i), n.contextWords)
             .map { w -> dict.idOf(w).let { id -> if (id >= 0) id else n.unk } }
         val eos = endOfMessage && n.eosTrained
         fun total(v: Int): Float {
@@ -930,7 +930,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         val candidates = dict.slipCandidates(finished)
         if (candidates.isEmpty()) return
         val beforeText = textBeforeWord(finished, separator) ?: return
-        val ctx = Lexer.previousWords(beforeText, 5).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
+        val ctx = Lexer.previousWords(beforeText, n.contextWords).map { w -> dict.idOf(w).let { if (it >= 0) it else n.unk } }
         if (ctx.isEmpty()) return
         val typedId = dict.idOf(finished)
         val bestId = dict.idOf(candidates.first())
@@ -958,7 +958,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
         val target = dict.idOf(finished)
         if (target < 0) return
         val before = textBeforeWord(finished, separator) ?: return
-        val ctx = Lexer.previousWords(before, 5).map { dict.idOf(it).let { id -> if (id >= 0) id else n.unk } }
+        val ctx = Lexer.previousWords(before, n.contextWords).map { dict.idOf(it).let { id -> if (id >= 0) id else n.unk } }
         p.record(ctx, target)
     }
 
@@ -999,7 +999,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             if (dict != null && n != null && p != null) {
                 val target = dict.idOf(corrected)
                 if (target >= 0) {
-                    val ctx = Lexer.previousWords(before.substring(0, idx), 5)
+                    val ctx = Lexer.previousWords(before.substring(0, idx), n.contextWords)
                         .map { w -> dict.idOf(w).let { id -> if (id >= 0) id else n.unk } }
                     p.record(ctx, target, copies = 2)
                 }
@@ -1040,7 +1040,7 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
             if (dict != null && n != null && p != null) {
                 val target = dict.idOf(undo.original)
                 if (target >= 0) {
-                    val ctx = Lexer.previousWords(before.substring(0, idx), 5)
+                    val ctx = Lexer.previousWords(before.substring(0, idx), n.contextWords)
                         .map { w -> dict.idOf(w).let { id -> if (id >= 0) id else n.unk } }
                     p.record(ctx, target, copies = 3)
                 }
@@ -1227,7 +1227,11 @@ class TypeInputMethodService : InputMethodService(), KeyboardView.Listener, Sugg
                 Log.i(TAG, "device benchmark: %.2f ms per prediction pass".format(ms))
             }
         }
-        return NeuralLm.load(this)
+        return NeuralLm.load(this).also { lm ->
+            if (com.aosmith.type.BuildConfig.DEBUG && lm.isRecurrent) {
+                lm.onRecurrentPass = { steps, total, us -> Log.d(TAG, "recurrent pass: $steps step(s) of $total in $us us") }
+            }
+        }
     }
 
     private fun defaultThreads(): Int {

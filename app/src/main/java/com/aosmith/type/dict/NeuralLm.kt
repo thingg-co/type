@@ -46,6 +46,16 @@ class NeuralLm private constructor(
     /** True for a recurrent (TNW5) network; its context is the whole sentence, not a window. */
     val isRecurrent: Boolean get() = recurrent != null
 
+    /**
+     * How many previous words the keyboard should hand this network: the whole sentence for a
+     * recurrent trunk (its cache only pays off on a growing prefix), five for the dense one, which
+     * was calibrated with five even though its window is wider.
+     */
+    val contextWords: Int get() = if (recurrent != null) k else DENSE_CONTEXT_WORDS
+
+    /** Called after each recurrent pass with (steps computed, prefix length, microseconds); for a debug log. */
+    var onRecurrentPass: ((Int, Int, Long) -> Unit)? = null
+
     val bos: Int get() = vocab - 2
     val unk: Int get() = vocab - 1
 
@@ -113,14 +123,16 @@ class NeuralLm private constructor(
     // ---- recurrent trunk -----------------------------------------------------------------
 
     private val cacheLock = Any()
-    private var cachedIds = IntArray(0)                 // [BOS, w1, ...] the states below have consumed
-    private var cachedStates: Array<FloatArray> = emptyArray()   // per layer, after cachedIds
+    private var cachedIds = IntArray(0)                          // [BOS, w1, ...] the trajectory below has consumed
+    private var cachedTrajectory: Array<Array<FloatArray>> = emptyArray()   // [t] = per-layer states after ids[0..t]
 
     /**
      * Runs the GRU over BOS plus the context (its last [k] words, leading BOS padding dropped).
-     * The confusable checks score several one-word extensions of the same prefix in a row, so the
-     * last prefix's states are kept: an extension costs one step per new word, a new sentence a
-     * full pass.
+     * The keyboard scores several variants of one prefix in a row, from more than one thread: the
+     * base context, one-word extensions for the confusable checks, then the next word. So the states
+     * after every position of the last prefix are kept, and any request shares the longest common
+     * prefix with them: a shorter context is free, an extension costs one step per new word, and
+     * only a new sentence pays a full pass.
      */
     private fun recurrentHidden(r: Recurrent, contextIds: List<Int>): Hidden {
         val words = contextIds.dropWhile { it == bos }.let { if (it.size > k) it.subList(it.size - k, it.size) else it }
@@ -128,32 +140,38 @@ class NeuralLm private constructor(
         ids[0] = bos
         for (i in words.indices) ids[i + 1] = words[i].let { if (it in 0 until vocab) it else unk }
         val nLayers = r.layers.size
-        val states: Array<FloatArray>
-        val from: Int
+        val trajectory = arrayOfNulls<Array<FloatArray>>(ids.size)
+        var from = 0
         synchronized(cacheLock) {
-            val reuse = cachedIds.isNotEmpty() && cachedIds.size <= ids.size &&
-                (0 until cachedIds.size).all { ids[it] == cachedIds[it] }
-            if (reuse) {
-                states = Array(nLayers) { cachedStates[it].copyOf() }
-                from = cachedIds.size
-            } else {
-                states = Array(nLayers) { FloatArray(r.layers[it].hidden) }
-                from = 0
-            }
+            var m = 0
+            while (m < cachedIds.size && m < ids.size && cachedIds[m] == ids[m]) m++
+            for (t in 0 until m) trajectory[t] = cachedTrajectory[t]      // states are never mutated once stored
+            from = m
         }
+        var states: Array<FloatArray> = if (from > 0) trajectory[from - 1]!! else Array(nLayers) { FloatArray(r.layers[it].hidden) }
+        val tStart = System.nanoTime()
         val x0 = FloatArray(dim)
         for (t in from until ids.size) {
             embRowInto(ids[t], x0)
             personal?.inputDelta(ids[t])?.let { d -> for (j in 0 until dim) x0[j] += d[j] }
             var x = x0
+            val next = Array(nLayers) { FloatArray(0) }
             for (l in 0 until nLayers) {
-                states[l] = gruStep(r.layers[l], x, states[l])
-                x = states[l]
+                next[l] = gruStep(r.layers[l], x, states[l])
+                x = next[l]
             }
+            states = next
+            trajectory[t] = next
         }
         synchronized(cacheLock) {
-            cachedIds = ids
-            cachedStates = Array(nLayers) { states[it].copyOf() }
+            // keep the longer of the two when one is a prefix of the other; otherwise the newest wins
+            val extendsCache = cachedIds.size <= ids.size && (0 until cachedIds.size).all { cachedIds[it] == ids[it] }
+            val cacheExtends = !extendsCache && ids.size < cachedIds.size && (0 until ids.size).all { cachedIds[it] == ids[it] }
+            if (!cacheExtends) {
+                cachedIds = ids
+                @Suppress("UNCHECKED_CAST")
+                cachedTrajectory = trajectory as Array<Array<FloatArray>>
+            }
         }
         val top = states[nLayers - 1]
         val hTop = r.layers[nLayers - 1].hidden
@@ -170,6 +188,7 @@ class NeuralLm private constructor(
         val vs = absMax / 127f
         val q = ByteArray(dim)
         for (o in 0 until dim) q[o] = Math.round(v[o] / vs).coerceIn(-127, 127).toByte()
+        onRecurrentPass?.invoke(ids.size - from, ids.size, (System.nanoTime() - tStart) / 1000)
         return Hidden(q, vs, v, emptyList())
     }
 
@@ -314,6 +333,7 @@ class NeuralLm private constructor(
 
         /** Sentences in training were cut at this many words; the context passed in is trimmed to it. */
         private const val RECURRENT_WINDOW = 40
+        private const val DENSE_CONTEXT_WORDS = 5
 
         private fun loadRecurrent(d: DataInputStream, nativeTopK: ((ByteArray, Float, Int) -> IntArray?)?): NeuralLm {
             val v = d.readInt()
