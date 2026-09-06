@@ -7,7 +7,9 @@ These tests ensure the binary format lives in one place (tnw.py) and can be:
 - Handle TNW2 (one-layer) files correctly
 """
 
+import os
 import struct
+import sys
 
 import numpy as np
 import pytest
