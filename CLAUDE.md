@@ -8,7 +8,12 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
 - Build: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew assembleDebug`
   (first build compiles llama.cpp, a few minutes; needs NDK 28.2 and CMake 3.31.6 from SDK Manager).
 - Release builds are signed only when BOARD_KEYSTORE/BOARD_KEYSTORE_PASS/BOARD_KEY_PASS (historic names, unchanged) are set
+  or `board.keystore` / `board.keystorePass` / `board.keyPass` are in ~/.gradle/gradle.properties
   (local keystore, not in the repo).
+- A version bump is not finished until `tools/release.sh` has run: it builds the signed release
+  APK, refuses a debug signature, tags v<version>, pushes, and publishes the APK to GitHub
+  Releases, which is where the site's download button (releases/latest) points. Phones that were
+  sideloaded debug builds keep getting debug builds; everyone else gets the release.
 - Install + activate on a device/emulator: `tools/sideload.sh [debug [model.gguf]]`.
 - Model/prompt evaluation: `tools/eval.py --server <llama-server> model.gguf ...` replays the
   app's exact prompts; keep it in sync with `llm/Prompts.kt` whenever prompts change.
