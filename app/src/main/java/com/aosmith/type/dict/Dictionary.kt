@@ -156,6 +156,77 @@ class Dictionary(words: Sequence<String>) {
             .toList()
     }
 
+    /**
+     * Completions of every prefix within one slip of [word]: the typed letters are walked
+     * against the whole trie with the keyboard-weighted distance (an adjacent key 0.45, a
+     * transposition 0.8, anything else 1), so "betye" reaches "bett…" and "beyom" reaches
+     * "beyon…" without waiting for the word to be finished. Best first by distance, then
+     * frequency. A prefix that matches exactly counts too (distance 0), so callers that
+     * already handle exact prefixes should ask only when [hasPrefix] is false.
+     */
+    fun slipPredictions(word: String, max: Int, limit: Float = 1f): List<String> {
+        val w = word.lowercase()
+        val m = w.length
+        if (m < 3) return emptyList()
+        // Depth-first over the trie with one distance row per node: row[i] is the distance
+        // between the first i typed letters and the node's path. A branch dies once every
+        // cell exceeds the limit; a node whose full-word distance is within it and whose
+        // depth is within one of the typed length is a corrected prefix.
+        class Match(val node: Node, val prefix: String, val distance: Float)
+        val matched = ArrayList<Match>()
+        val path = StringBuilder()
+        fun walk(node: Node, prev: FloatArray, prev2: FloatArray?, depth: Int) {
+            if (depth >= m - 1 && depth >= 1 && prev[m] <= limit) matched += Match(node, path.toString(), prev[m])
+            if (depth >= m + 1) return
+            for ((c, child) in node.children) {
+                val cur = FloatArray(m + 1)
+                cur[0] = (depth + 1).toFloat()
+                var rowMin = cur[0]
+                for (i in 1..m) {
+                    val cost = KeyNeighbors.substitutionCost(w[i - 1], c)
+                    var v = minOf(prev[i] + 1f, cur[i - 1] + 1f, prev[i - 1] + cost)
+                    if (i > 1 && prev2 != null && path.isNotEmpty() && w[i - 1] == path[path.length - 1] && w[i - 2] == c) {
+                        v = minOf(v, prev2[i - 2] + KeyNeighbors.TRANSPOSE_COST)
+                    }
+                    cur[i] = v
+                    if (v < rowMin) rowMin = v
+                }
+                if (rowMin > limit) continue
+                path.append(c)
+                walk(child, cur, prev, depth + 1)
+                path.setLength(path.length - 1)
+            }
+        }
+        walk(root, FloatArray(m + 1) { it.toFloat() }, null, 0)
+        if (matched.isEmpty()) return emptyList()
+        // Under each corrected prefix, the most frequent words, best-first over the frontier
+        // as in [predictions]; a word reachable from several prefixes keeps its best distance.
+        class Entry(val node: Node, val text: String)
+        val best = HashMap<String, Float>()
+        val bad = misspellings
+        for (match in matched) {
+            val queue = java.util.PriorityQueue<Entry>(16, compareByDescending { it.node.weight })
+            queue.add(Entry(match.node, match.prefix))
+            var found = 0
+            var visited = 0
+            while (queue.isNotEmpty() && found < max * 2 && visited < 200) {
+                val e = queue.poll()
+                visited++
+                if (e.node.terminal) {
+                    found++
+                    best[e.text] = minOf(best[e.text] ?: Float.MAX_VALUE, match.distance)
+                }
+                for ((c, child) in e.node.children) queue.add(Entry(child, e.text + c))
+            }
+        }
+        return best.entries.asSequence()
+            .filter { (word, _) -> bad?.isMisspelling(word) != true && (rank[word] ?: Int.MAX_VALUE) <= OFFER_MAX_RANK }
+            .sortedWith(compareBy({ it.value }, { rank[it.key] ?: Int.MAX_VALUE }))
+            .take(max)
+            .map { matchCase(word, it.key) }
+            .toList()
+    }
+
     /** Letters that can follow [prefix] in some dictionary word, weighted by frequency (sums to 1). */
     fun nextLetters(prefix: String): Map<Char, Float> {
         var node = root

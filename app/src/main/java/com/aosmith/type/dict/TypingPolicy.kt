@@ -67,7 +67,12 @@ object TypingPolicy {
 
         if (dict.isKnown(word)) return MidWordAction.None
 
-        return MidWordAction.Typo(word, cased(dict, dict.suggest(word, 2)), askModel = word.length >= 3)
+        // A slip inside a longer word ("betye", "beyom") used to be matched only against whole
+        // words, which charges the unfinished tail as edits and hides "better" and "beyond" until
+        // the word is nearly done. Corrected-prefix completions come first; whole-word matches
+        // fill in behind them.
+        val fixes = (dict.slipPredictions(word, 3) + dict.suggest(word, 2)).distinctBy { it.lowercase() }
+        return MidWordAction.Typo(word, cased(dict, fixes.take(2)), askModel = word.length >= 3)
     }
 
     /** Likely words for an empty prefix. The network handles sentence starts; bigrams cannot. */

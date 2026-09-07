@@ -27,7 +27,9 @@ Site: https://thingg-co.github.io/type/
   "were" and "ill" are left alone.
 - Suggestions and correction limits use keyboard-weighted edit distance: substituting an
   adjacent key barely counts, so the fat-finger explanation wins ("cst" suggests "cat",
-  not "cut").
+  not "cut"). A slip inside a longer word does not stall the suggestions: "betye" and
+  "beyom" still offer "better" and "beyond", from every word in the list whose start is
+  one slip away from what was typed.
 - The ✨ button sends the current sentence to the model for a whole-sentence pass; while the
   model works the key pulses and the bar shows a spinner, so a slow phone never looks stuck.
 - Optional on-device learning: what you type trains a small personal delta over the frozen

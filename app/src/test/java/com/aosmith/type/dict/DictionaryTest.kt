@@ -20,6 +20,22 @@ class DictionaryTest {
         assertFalse(dict.isKnown(""))
     }
 
+    @Test fun `slip predictions complete a prefix typed with one slip`() {
+        val d = Dictionary(sequenceOf("the", "better", "beyond", "betting", "bet", "verge", "begin", "beta"))
+        assertEquals(listOf("better"), d.slipPredictions("betye", 2))     // y sits next to t; "betti" is a second slip away
+        assertEquals("beyond", d.slipPredictions("beyom", 2).first())              // m sits next to n
+        assertEquals("better", d.slipPredictions("bteter", 2).first())             // a transposition
+        assertEquals("Better", d.slipPredictions("Betye", 1).first())              // casing mirrored
+        assertTrue(d.slipPredictions("be", 2).isEmpty())                            // too short to judge
+        assertTrue(d.slipPredictions("zzzzz", 2).isEmpty())                         // nothing within one slip
+    }
+
+    @Test fun `slip predictions rank an exact prefix first and a far word not at all`() {
+        val d = Dictionary(sequenceOf("bet", "better", "betting", "belt"))   // most frequent first, as the real list
+        assertEquals(listOf("bet", "better", "betting"), d.slipPredictions("bet", 3))
+        assertTrue("belt" !in d.slipPredictions("betting", 3))
+    }
+
     @Test fun `short slip fix substitutes one adjacent key into a common word`() {
         val d = Dictionary(sequenceOf("so", "on", "sky", "ask"))
         assertEquals("so", d.shortSlipFix("sk"))     // k sits under o

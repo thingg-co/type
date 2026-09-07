@@ -27,7 +27,9 @@ now; Thai is planned. arm64-v8a only. Licensed PolyForm Noncommercial 1.0.0.
   which is what makes corrections fast. Single-word output is GBNF-constrained.
 - `llm/` - `SpellLlm` (modes, prefix split via chat template, output validation), `Prompts`.
 - `dict/` - 126k-word frequency list + trie (assets/en_words.txt): known-word gate,
-  keyboard-weighted (KeyNeighbors) bounded edit-distance suggestions, adaptive-key weights;
+  keyboard-weighted (KeyNeighbors) bounded edit-distance suggestions, slip-tolerant prefix
+  completions (`slipPredictions`: a bounded-distance walk of the whole trie, so a slip inside a
+  longer word still completes to "better" or "beyond"), adaptive-key weights;
   Contractions auto-apostrophizes bare forms before the known-word gate; Confusables lists
   swappable words (then/than, there/their/they're) whose margins the prediction network
   decides — thresholds calibrated by tools/confusables_calibrate.py + ConfusableCalibrationHarness,
