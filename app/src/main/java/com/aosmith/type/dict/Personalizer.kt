@@ -71,16 +71,28 @@ class Personalizer(private val base: NeuralLm) {
 
     // ---- learning --------------------------------------------------------------------
 
-    /** A budgeted burst of SGD; called when the keyboard hides. Saves at most every 30 s. */
-    fun trainAndMaybeSave(file: File, steps: Int = 192) {
-        synchronized(lock) {
-            if (samples.isEmpty()) return
-            repeat(minOf(steps, samples.size * 8)) { step(samples[rng.nextInt(samples.size)]) }
-            val now = System.currentTimeMillis()
-            if (now - lastSaveAt > 30_000) {
-                lastSaveAt = now
-                runCatching { file.outputStream().use { save(it) } }
-            }
+    /**
+     * A budgeted burst of SGD; called when the keyboard hides. Saves at most every 30 s.
+     *
+     * The lock is held only to copy the sample pool and to save: a step on a recurrent
+     * network is a whole sentence pass, hundreds of milliseconds on a slow phone, and the
+     * typing thread takes this lock on every word. Holding it across a burst stalled the
+     * keyboard for ten seconds at a time and got it killed (T807D, 2026-09-07). [budgetMs]
+     * bounds the burst by wall time as well as by steps.
+     */
+    fun trainAndMaybeSave(file: File, steps: Int = 192, budgetMs: Long = 250) {
+        val pool = synchronized(lock) { if (samples.isEmpty()) return else samples.toTypedArray() }
+        val deadline = System.currentTimeMillis() + budgetMs
+        var done = 0
+        val limit = minOf(steps, pool.size * 8)
+        while (done < limit && System.currentTimeMillis() < deadline) {
+            step(pool[rng.nextInt(pool.size)])
+            done++
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastSaveAt > 30_000) {
+            lastSaveAt = now
+            runCatching { file.outputStream().use { save(it) } }
         }
     }
 
@@ -90,7 +102,7 @@ class Personalizer(private val base: NeuralLm) {
         val ctx = sample.copyOfRange(0, k).toList()
         val target = sample[k]
 
-        val hidden = base.hidden(ctx) // includes current deltas via base.personal == this
+        val hidden = base.hidden(ctx, cache = false) // includes current deltas via base.personal == this; never evicts the typing prefix
         val h = hidden.f
 
         // candidate set: target + negatives sampled from the frequent half of the vocab
@@ -161,7 +173,7 @@ class Personalizer(private val base: NeuralLm) {
                 d.writeFloat(v)
             }
             d.writeInt(samples.size)
-            for (s in samples) for (x in s) d.writeShort(x)
+            for (s in samples) for (x in s) d.writeInt(x)     // ids run past 65,535 since the 126k list
         }
     }
 
@@ -169,7 +181,10 @@ class Personalizer(private val base: NeuralLm) {
         synchronized(lock) {
             val magic = ByteArray(4)
             d.readFully(magic)
-            if (!magic.contentEquals(MAGIC)) throw IOException("bad personalization file")
+            // TPL1 wrote sample ids as 16-bit values, which folded every id past 65,535; its
+            // samples still load (the deltas are what matter) and are rewritten as TPL2.
+            val shortIds = magic.contentEquals(MAGIC_V1)
+            if (!magic.contentEquals(MAGIC) && !shortIds) throw IOException("bad personalization file")
             lifetimeSamples = d.readLong()
             if (d.readInt() != base.dim || d.readInt() != base.k || d.readInt() != base.vocab) {
                 throw IOException("saved for a different model shape; starting fresh")
@@ -187,7 +202,7 @@ class Personalizer(private val base: NeuralLm) {
             repeat(d.readInt()) { bias[d.readInt()] = d.readFloat() }
             samples.clear()
             repeat(d.readInt()) {
-                samples.addLast(IntArray(base.k + 1) { d.readUnsignedShort() })
+                samples.addLast(IntArray(base.k + 1) { if (shortIds) d.readUnsignedShort() else d.readInt() })
             }
         }
     }
@@ -201,7 +216,8 @@ class Personalizer(private val base: NeuralLm) {
     }
 
     companion object {
-        private val MAGIC = "TPL1".toByteArray()
+        private val MAGIC = "TPL2".toByteArray()
+        private val MAGIC_V1 = "TPL1".toByteArray()
 
         // Capacity: months of typing, not weeks. The replay buffer is the memory span
         // (~600 KB on disk at 60k), and the clamps are how far personal usage can bend

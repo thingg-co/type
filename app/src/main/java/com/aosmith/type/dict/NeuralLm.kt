@@ -80,9 +80,13 @@ class NeuralLm private constructor(
 
     internal fun trunkLayers(): List<Layer> = layers
 
-    /** Left-pads with BOS, maps unknown ids to UNK, and runs the trunk. */
-    fun hidden(contextIds: List<Int>): Hidden {
-        recurrent?.let { return recurrentHidden(it, contextIds) }
+    /**
+     * Left-pads with BOS, maps unknown ids to UNK, and runs the trunk. [cache] false leaves the
+     * recurrent prefix cache untouched: the personaliser's replay samples are random contexts
+     * and must not evict the sentence being typed.
+     */
+    fun hidden(contextIds: List<Int>, cache: Boolean = true): Hidden {
+        recurrent?.let { return recurrentHidden(it, contextIds, cache) }
         val ctx = IntArray(k)
         for (i in 0 until k) {
             val idx = contextIds.size - k + i
@@ -134,7 +138,7 @@ class NeuralLm private constructor(
      * prefix with them: a shorter context is free, an extension costs one step per new word, and
      * only a new sentence pays a full pass.
      */
-    private fun recurrentHidden(r: Recurrent, contextIds: List<Int>): Hidden {
+    private fun recurrentHidden(r: Recurrent, contextIds: List<Int>, cache: Boolean): Hidden {
         val words = contextIds.dropWhile { it == bos }.let { if (it.size > k) it.subList(it.size - k, it.size) else it }
         val ids = IntArray(words.size + 1)
         ids[0] = bos
@@ -142,7 +146,7 @@ class NeuralLm private constructor(
         val nLayers = r.layers.size
         val trajectory = arrayOfNulls<Array<FloatArray>>(ids.size)
         var from = 0
-        synchronized(cacheLock) {
+        if (cache) synchronized(cacheLock) {
             var m = 0
             while (m < cachedIds.size && m < ids.size && cachedIds[m] == ids[m]) m++
             for (t in 0 until m) trajectory[t] = cachedTrajectory[t]      // states are never mutated once stored
@@ -163,7 +167,7 @@ class NeuralLm private constructor(
             states = next
             trajectory[t] = next
         }
-        synchronized(cacheLock) {
+        if (cache) synchronized(cacheLock) {
             // keep the longer of the two when one is a prefix of the other; otherwise the newest wins
             val extendsCache = cachedIds.size <= ids.size && (0 until cachedIds.size).all { cachedIds[it] == ids[it] }
             val cacheExtends = !extendsCache && ids.size < cachedIds.size && (0 until ids.size).all { cachedIds[it] == ids[it] }
